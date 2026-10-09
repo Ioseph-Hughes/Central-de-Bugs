@@ -3,11 +3,12 @@
   'use strict';
   const $ = selector => document.querySelector(selector);
   const preview = document.documentElement.dataset.centralMode === 'preview';
+  const cloud = document.documentElement.dataset.centralMode === 'cloud';
   const names = { 'radar-contratual': 'Radar Contratual', 'central-demo': 'Central · Testes' };
   const types = { bug: 'Bug / erro', melhoria: 'Melhoria', ajuste: 'Ajuste' };
   const states = { novo: 'Novo', 'em-analise': 'Em análise', 'em-correcao': 'Em correção', resolvido: 'Resolvido' };
   const icons = { bug: '⌁', melhoria: '✧', ajuste: '↗' };
-  let records = [], selectedSystem = '', loading = false, fingerprint = '';
+  let records = [], stats = [], selectedSystem = '', loading = false, fingerprint = '', active = !cloud, epoch = 0;
   function element(tag, text, className) {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
@@ -25,35 +26,50 @@
   }
   function showError(message) { $('#error').textContent = message; $('#error').hidden = !message; }
   async function api(url, options) {
+    if (cloud) return CentralCloud.api(url, options);
     const response = await fetch(url, { ...options, signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error(`A Central respondeu com erro ${response.status}.`);
     return response.json();
   }
   async function saveStatus(key, status) {
+    const current = epoch;
+    const previous = records.find(record => record.key === key);
     const saved = await api(`/api/reports/${key}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    if (current !== epoch) throw new Error('Sessão encerrada.');
+    if (cloud && previous && previous.status !== saved.status) {
+      const count = stats.find(item => item.project_id === previous.report.projectId);
+      const group = state => state === 'novo' ? 'new_count' : state === 'resolvido' ? 'resolved_count' : 'progress_count';
+      if (count) { count[group(previous.status)]--; count[group(saved.status)]++; }
+    }
     records = records.map(record => record.key === key ? saved : record);
     fingerprint = ''; render(); return saved;
   }
   async function refresh() {
-    if (loading) return;
+    if (loading || !active) return;
+    const current = epoch;
     loading = true; $('#refresh').disabled = true;
     try {
-      const payload = await api('/api/reports');
-      const next = JSON.stringify(payload.reports);
+      const search = $('#search').value.trim();
+      const payload = await api(`/api/reports${cloud && search ? '?search=' + encodeURIComponent(search) : ''}`);
+      if (current !== epoch) return;
+      if (cloud && search !== $('#search').value.trim()) { setTimeout(refresh,0); return; }
+      for (const project of payload.projects || []) names[project.id] = project.name;
+      const next = JSON.stringify([payload.reports,payload.stats]); stats = payload.stats || [];
       if (next !== fingerprint) { records = payload.reports; fingerprint = next; render(); }
-      $('#sync').textContent = `Atualizado às ${new Date().toLocaleTimeString('pt-BR')} · a cada 3 s`;
+      $('#sync').textContent = `Atualizado às ${new Date().toLocaleTimeString('pt-BR')} · a cada ${cloud ? 15 : 3} s`;
+      if (payload.limited) $('#sync').textContent += ` · histórico parcial: ${payload.reports.length} mais recentes`;
       showError('');
-    } catch { showError('Não foi possível atualizar. Confira se a Central está rodando e clique em Atualizar.'); $('#sync').textContent = 'Conexão indisponível'; }
-    finally { loading = false; $('#refresh').disabled = false; }
+    } catch (error) { if (current === epoch) { showError(cloud ? error.message : 'Não foi possível atualizar. Confira se a Central está rodando e clique em Atualizar.'); $('#sync').textContent = 'Conexão indisponível'; } }
+    finally { if (current === epoch) { loading = false; $('#refresh').disabled = false; } }
   }
   function render() {
-    const ids = [...new Set(['radar-contratual', 'central-demo', ...records.map(item => item.report.projectId)])];
+    const ids = [...new Set([...Object.keys(names), ...records.map(item => item.report.projectId)])];
     const systems = $('#systems'); systems.replaceChildren();
     for (const id of ['', ...ids]) {
       const button = element('button', undefined, 'system-button'); button.setAttribute('aria-current', String(id === selectedSystem));
       const title = id ? systemName(id) : 'Todos os sistemas';
       button.append(element('span', id ? title.split(/\s+/).filter(word => /[\p{L}\p{N}]/u.test(word)).slice(0, 2).map(word => word[0]).join('').toUpperCase() : '▦', 'system-icon'),
-        element('span', title, 'system-name'), element('span', String(records.filter(item => !id || item.report.projectId === id).length), 'count'));
+        element('span', title, 'system-name'), element('span', String(cloud ? stats.filter(item => !id || item.project_id === id).reduce((sum,item) => sum + item.total,0) : records.filter(item => !id || item.report.projectId === id).length), 'count'));
       button.onclick = () => { selectedSystem = id; render(); }; systems.append(button);
     }
     $('#page-title').textContent = selectedSystem ? systemName(selectedSystem) : 'Todos os sistemas';
@@ -62,10 +78,14 @@
     $('#new-count').textContent = current.filter(item => item.status === 'novo').length;
     $('#resolved-count').textContent = current.filter(item => item.status === 'resolvido').length;
     $('#progress-count').textContent = current.filter(item => ['em-analise', 'em-correcao'].includes(item.status)).length;
+    if (cloud) {
+      const counts = stats.filter(item => !selectedSystem || item.project_id === selectedSystem);
+      for (const [id,key] of [['total','total'],['new-count','new_count'],['resolved-count','resolved_count'],['progress-count','progress_count']]) $( '#' + id ).textContent = counts.reduce((sum,item) => sum + item[key],0);
+    }
     const term = $('#search').value.trim().toLocaleLowerCase('pt-BR');
     const filtered = current.filter(item => (!$('#type').value || item.report.type === $('#type').value) &&
       (!$('#status-filter').value || item.status === $('#status-filter').value) &&
-      (!term || [item.report.title, item.report.description, item.report.projectId, systemName(item.report.projectId)].join(' ').toLocaleLowerCase('pt-BR').includes(term)));
+      (cloud || !term || [item.report.title, item.report.description, item.report.projectId, systemName(item.report.projectId)].join(' ').toLocaleLowerCase('pt-BR').includes(term)));
     $('#visible-count').textContent = filtered.length;
     const list = $('#reports'); list.replaceChildren();
     if (!filtered.length) {
@@ -85,7 +105,7 @@
         row.dataset.key = item.key;
         const meta = element('span', undefined, 'row-meta');
         meta.append(element('span', types[report.type], `badge ${report.type}`), element('span', date(item.receivedAt)),
-          element('span', `${item.attachments.length} imagem(ns) · ${report.links.length} link(s)`));
+          element('span', `${item.attachmentCount ?? item.attachments.length} imagem(ns) · ${item.linkCount ?? report.links.length} link(s)`));
         content.append(element('strong', report.title), element('span', report.description, 'excerpt'), meta);
         row.append(element('span', icons[report.type], 'type-icon'), content, element('span', states[item.status], `badge status-badge ${item.status}`));
         row.onclick = () => openDetail(item.key);
@@ -103,8 +123,13 @@
       section.append(heading, rows); list.append(section);
     }
   }
-  function openDetail(key) {
-    const item = records.find(record => record.key === key); if (!item) return;
+  async function openDetail(key) {
+    let item = records.find(record => record.key === key); if (!item) return;
+    if (cloud) {
+      const current = epoch;
+      try { item = await api(`/api/reports/${key}`); if (current !== epoch || !active) return; }
+      catch (error) { if (current === epoch) showError(error.message); return; }
+    }
     const report = item.report, container = $('#detail-content'); container.replaceChildren();
     const title = element('h2', report.title); title.id = 'detail-title';
     const meta = element('div', undefined, 'detail-meta');
@@ -156,7 +181,8 @@
   function themeButton() { const dark = document.documentElement.dataset.theme === 'dark'; $('#theme').textContent = dark ? '☀ Modo claro' : '☾ Modo escuro'; $('#theme').setAttribute('aria-pressed', String(dark)); }
   $('#theme').onclick = () => { document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('central-theme', document.documentElement.dataset.theme); } catch {} themeButton(); };
   $('#refresh').onclick = refresh;
-  $('#search').oninput = render; $('#type').onchange = render; $('#status-filter').onchange = render;
+  let searchTimer;
+  $('#search').oninput = () => { if (cloud) { clearTimeout(searchTimer); searchTimer = setTimeout(refresh,300); } else render(); }; $('#type').onchange = render; $('#status-filter').onchange = render;
   $('#close-detail').onclick = () => $('#detail').close();
   themeButton(); render();
   if (preview) {
@@ -167,10 +193,16 @@
     showError('O painel foi publicado. Para receber e acompanhar relatos, falta conectar o armazenamento online e configurar o acesso.');
     return; // A prévia não inicia o widget nem faz requisições a uma API inexistente.
   }
-  window.feedback = CentralBugs.init({ projectId: 'central-demo', endpoint: '/api/reports', successMessage: 'Relato salvo na Central! Ele aparecerá na caixa de entrada.' });
-  $('#open').onclick = () => feedback.open();
-  refresh();
-  const timer = setInterval(() => { if (!document.hidden) refresh(); }, 3000);
+  function start() {
+    active = true;
+    window.feedback = CentralBugs.init({ projectId: 'central-demo', endpoint: '/api/reports', ...(cloud ? {transport:'signed-upload'} : {}), successMessage: 'Relato salvo na Central! Ele aparecerá na caixa de entrada.' });
+    $('#open').onclick = () => feedback.open(); refresh();
+  }
+  if (cloud) {
+    $('.sidebar-footer').replaceChildren(element('span','Central online'),element('small','Relatos privados · Supabase'));
+    CentralCloud.start(start,() => { active = false; loading = false; epoch++; fingerprint = ''; records = []; stats = []; selectedSystem = ''; window.feedback?.destroy(); window.feedback = undefined; $('#detail').close(); render(); showError(''); });
+  } else start();
+  const timer = setInterval(() => { if (!document.hidden) refresh(); }, cloud ? 15000 : 3000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   window.addEventListener('pagehide', () => clearInterval(timer));
 })();

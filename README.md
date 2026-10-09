@@ -1,4 +1,4 @@
-# Central de Bugs · v0.3
+# Central de Bugs · v0.4
 
 Widget de feedback reutilizável, em JavaScript puro, sem instalação de pacotes ou etapa de build. A interface fica em um Shadow DOM para isolar seus estilos do SaaS.
 
@@ -10,7 +10,7 @@ Na pasta do projeto:
 npm start
 ```
 
-Com Node.js 20 ou superior, abra http://localhost:4173. O painel e o receptor local agora compartilham uma caixa de entrada persistente. O Radar de teste em `localhost:4180` continua enviando para `http://127.0.0.1:4181/reports`.
+Com Node.js 22, abra http://localhost:4173. O painel e o receptor local agora compartilham uma caixa de entrada persistente. O Radar de teste em `localhost:4180` continua enviando para `http://127.0.0.1:4181/reports`.
 
 O comando inicia as portas 4173 (painel/API) e 4181 (receptor compatível com o Radar). Não use o servidor Python antigo em paralelo. As duas portas atendem à mesma Central.
 
@@ -23,27 +23,23 @@ O comando inicia as portas 4173 (painel/API) e 4181 (receptor compatível com o 
 
 Os relatos e arquivos são salvos em `data/`, que está excluída do Git. Recarga e reinício do servidor mantêm relatos, imagens e status. Cada envio é confirmado somente depois de gravar o registro e seus arquivos; novas tentativas com o mesmo par `projectId` + `id` não duplicam ocorrências. Faça backup dessa pasta para preservar os dados ao mover a Central.
 
-Este receptor é para testes locais: escuta apenas em loopback e aceita as origens `localhost`/`127.0.0.1` das portas 4173 e 4180. Não há autenticação de produção. A Central definitiva precisará do serviço autenticado e hospedado que será definido depois. O limite do receptor local é 64 MB por requisição; o widget continua sem limite de texto ou quantidade de imagens imposto pela interface.
+Este receptor é para testes locais: escuta apenas em loopback e aceita as origens `localhost`/`127.0.0.1` das portas 4173 e 4180. A publicação online usa uma API separada, com Supabase e autenticação; veja o guia abaixo. O limite do receptor local é 64 MB por requisição; o widget continua sem limite de texto ou quantidade de imagens imposto pela interface.
 
 O receptor antigo armazenava somente o último relato em memória, sem guardar os arquivos. Esses envios não constituem um histórico recuperável. Uma ocorrência importada desse receptor deve indicar explicitamente as imagens indisponíveis.
 
-## Publicar a prévia do painel na Vercel
+## Publicar com Supabase e Vercel
 
-O repositório agora inclui `vercel.json` e `npm run build`. O build cria `dist/` com apenas `index.html`, `dashboard.css`, `dashboard.js` e `central-bugs.js`. A Vercel serve esses arquivos sem executar `server.cjs`, que depende de portas e armazenamento local.
+Siga [DEPLOY.md](DEPLOY.md) para instalar o SQL, criar o administrador, configurar as quatro variáveis e instalar o plugin no Radar. [`.env.example`](.env.example) contém os nomes e as duas configurações públicas do projeto informado. Nunca adicione uma chave secreta ao Git.
 
-Essa publicação é **uma prévia da interface**, sem recebimento de relatos, API ou login de produção. O painel informa que o armazenamento online está pendente e mantém o envio desativado. A Central local iniciada com `npm start` continua funcionando com seus dados em disco.
+A versão online usa login por e-mail/senha, leitura e alteração de status restritas aos administradores, tabelas com RLS e bucket privado. O widget envia arquivos diretamente por URLs assinadas do Supabase e confirma a ocorrência somente após verificar todos os anexos. Domínios permitidos e sistemas ficam em `central_projects`. O dashboard busca detalhes completos sob demanda; as imagens recebem links temporários e a lista atualiza a cada 15 segundos. A API inclui quotas persistentes de envio.
 
-No projeto da Vercel:
+`npm run build` cria `dist/` com uma lista explícita de arquivos públicos. Se `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` estiverem configuradas, inclui o login empacotado em `cloud.js`. O build não publica chaves secretas, `.env`, o receptor local ou `data/`. A Vercel executa `api/reports.js`, sem usar disco local para ocorrências. O SDK oficial do Supabase gerencia as sessões; o plugin distribuído continua sem dependências.
 
-1. Conecte o repositório `Ioseph-Hughes/Central-de-Bugs` e publique a versão atualizada da branch `main`.
-2. Em **Settings → Build and Deployment**, confira **Framework Preset: Other**.
-3. O arquivo `vercel.json` define **Build Command: npm run build** e **Output Directory: dist**. A raiz deve ser a pasta deste repositório.
-4. Faça uma nova publicação a partir do commit que contém essa configuração. Reexecutar um deployment antigo pode reutilizar o código anterior.
-5. Abra o endereço principal do projeto e confira o aviso de armazenamento pendente.
+Sem as duas variáveis públicas, o build mantém uma **prévia**, com aviso de armazenamento pendente e envio desativado. Com elas, o login é exibido; ainda é necessário executar o SQL, cadastrar o administrador e configurar `SUPABASE_SECRET_KEY` e `CENTRAL_ORIGIN` para usar a API. A Central local de `npm start` continua independente, com os dados em disco; não há migração automática.
 
-Nenhuma variável de ambiente é necessária para a prévia. Configurar chaves do Supabase ainda não conecta o receptor: a API, as tabelas, as permissões, o login e o upload online precisam ser implementados antes do uso real. As funções da Vercel têm limites de requisição que exigem adaptar o envio de imagens.
+Use **Framework: Other**, **Build: npm run build**, **Output: dist**, raiz do repositório e Node.js 22. Publique `main` novamente após configurar as variáveis. Os limites de texto, tamanho de imagem, quotas e histórico da versão online estão documentados no guia.
 
-Se aparecer **500 FUNCTION_INVOCATION_FAILED**, abra os logs da função na Vercel. Esse código de erro sozinho não identifica a causa. O servidor local original não é um receptor pronto para a Vercel; o build estático remove essa dependência da abertura do painel.
+Se aparecer **500 FUNCTION_INVOCATION_FAILED**, abra os logs da função no deployment atual. Esse código sozinho não identifica a causa.
 
 ## Instalar em um SaaS
 
@@ -53,11 +49,12 @@ Copie `central-bugs.js` para os arquivos públicos do seu frontend e adicione um
 <script defer
   src="/central-bugs.js"
   data-project-id="portal-cliente"
-  data-endpoint="https://sua-central.com/api/relatos"
+  data-endpoint="https://sua-central.com/api/reports"
+  data-transport="signed-upload"
 ></script>
 ```
 
-O identificador é obrigatório; o endereço de envio pode ser definido quando a Central estiver pronta. Opcionalmente, `data-position="top-left"` define o canto inicial. A instância automática fica disponível em `CentralBugs.instance`.
+Cadastre o identificador e os domínios no Supabase antes de usar o SaaS online. Omita `data-transport` para um receptor multipart, incluindo a Central local. Opcionalmente, `data-position="top-left"` define o canto inicial. A instância automática fica disponível em `CentralBugs.instance`.
 
 Para fornecer dados de usuário ou usar um callback, carregue o script sem `data-project-id` e inicialize manualmente depois do carregamento do DOM:
 
@@ -66,7 +63,8 @@ Para fornecer dados de usuário ou usar um callback, carregue o script sem `data
 <script>
   const feedback = CentralBugs.init({
     projectId: 'portal-cliente',
-    endpoint: 'https://sua-central.com/api/relatos',
+    endpoint: 'https://sua-central.com/api/reports',
+    transport: 'signed-upload',
     position: 'bottom-right',
     // Opcional: fornecido pelo próprio SaaS.
     user: { id: 'usuario-123', name: 'Maria' }
@@ -116,16 +114,18 @@ A própria seta permite recuperar o botão. Opcionalmente, conecte `feedback.sho
 
 ## Contrato inicial de envio
 
-O modo `endpoint` faz `POST` com `multipart/form-data`:
+Sem `transport`, o modo `endpoint` faz `POST` com `multipart/form-data`:
 
 - `report`: string JSON com `schemaVersion`, `id`, `projectId`, `type`, `title`, `description`, `links`, `createdAt`, `context`, `attachments` e, quando fornecido, `user`.
 - `attachments`: campo repetido com cada arquivo binário, na mesma ordem dos metadados de `report.attachments`.
 
 `context` contém a URL atual (incluindo parâmetros), título da página, idioma e dimensões da janela. Revise o contexto que seu SaaS deseja compartilhar. O widget não coleta senhas, cookies, logs ou conteúdo do DOM. Os dados de usuário são somente os fornecidos na configuração.
 
-Uma resposta HTTP 2xx confirma o envio. Erros de rede ou HTTP mantêm o rascunho; a requisição é cancelada após 30 segundos. O `id` do rascunho permanece nas novas tentativas: o backend deve usá-lo para evitar duplicatas quando uma resposta se perder. O modo callback deve implementar seu próprio timeout/cancelamento se necessário.
+Uma resposta HTTP 2xx confirma o envio. Erros de rede ou HTTP mantêm o rascunho; a requisição é cancelada após 30 segundos. O `id` e o payload permanecem nas tentativas sem edição; editar um relato após uma falha cria outro `id`. O backend deve deduplicar envios pelo identificador. O modo callback deve implementar seu próprio timeout/cancelamento se necessário.
 
-O servidor deve permitir CORS para as origens dos SaaS, validar os campos e arquivos e aplicar autenticação/controles de envio. `projectId` identifica o projeto; não é uma credencial. Não coloque chaves privadas no frontend. Para autenticação usando o SaaS, use um endpoint no mesmo domínio ou o callback `onSubmit` com seu cliente HTTP existente. Este contrato pode ser adaptado quando a Central for definida.
+O servidor deve permitir CORS para as origens dos SaaS, validar os campos e arquivos e aplicar autenticação/controles de envio. `projectId` identifica o projeto; não é uma credencial. Não coloque chaves privadas no frontend. Para autenticação usando o SaaS, use um endpoint no mesmo domínio ou o callback `onSubmit` com seu cliente HTTP existente. A API online já implementa CORS por sistema, validação, controles de envio e acesso administrativo autenticado.
+
+Com `transport: 'signed-upload'`, a API recebe JSON `{"action":"prepare","report":...}` e retorna `key`, `receipt` e `uploads` (um slot por imagem, com `url` ou `uploaded:true`). O widget faz `PUT` das imagens diretamente nas URLs e confirma via `{"action":"commit","key":...,"receipt":...}`. Uma preparação com `ready:true` indica que a ocorrência já foi confirmada em uma tentativa anterior. O timeout é de 30 segundos por chamada à API e de dois minutos por upload; destruir o widget cancela as requisições. Não use esse transporte com o servidor local.
 
 ## Verificação
 
@@ -134,7 +134,7 @@ O exemplo de integração com o frontend Next.js do Radar está em
 receptor local persistente para verificar o envio antes da definição
 da Central definitiva: `npm start`. `npm run test:receiver` executa a verificação automatizada da Central em portas temporárias.
 
-O teste de navegador em `tests/widget.cjs` verifica instalação por uma tag, arraste com mouse e toque, recolhimento nas quatro bordas, envio multipart, recuperação de falha, anexos, links, preferências, isolamento de conteúdo, captura simulada e navegação por teclado. Para executá-lo, use Node.js 20 ou superior. As dependências abaixo são apenas para desenvolvimento; o widget distribuído continua independente:
+O teste de navegador em `tests/widget.cjs` verifica instalação por uma tag, arraste com mouse e toque, recolhimento nas quatro bordas, envio multipart, recuperação de falha, anexos, links, preferências, isolamento de conteúdo, captura simulada e navegação por teclado. Para executá-lo, use Node.js 22. As dependências abaixo são apenas para desenvolvimento; o widget distribuído continua independente:
 
 ```sh
 npm install
@@ -152,3 +152,12 @@ Os testes iniciam e encerram seus próprios servidores locais. `tests/build.cjs`
 - `GET /attachments/:key/:indice`: disponibiliza a imagem armazenada.
 
 O caminho da imagem é retornado pelo receptor; nomes de arquivos enviados não são usados como caminhos no disco. O receptor grava arquivos temporários e publica o registro por renomeação antes de responder. A implementação local usa um único processo/fila de escrita; para múltiplos processos, substitua o armazenamento por um banco transacional.
+
+O teste `tests/cloud.cjs` usa o SDK oficial e um serviço simulado localmente para verificar login, restrição administrativa, CORS por sistema, duas imagens, confirmação com falha e retentativa, detalhes privados, busca completa, Resolver e saída da sessão. Não acessa o projeto Supabase real. `tests/build.cjs` também verifica o build com login e ausência de chave secreta nos arquivos públicos.
+
+Para conferir o SQL em PostgreSQL embarcado, sem serviços remotos:
+
+```sh
+npm install --prefix /tmp/central-sql-check @electric-sql/pglite
+PGLITE_PATH=/tmp/central-sql-check/node_modules/@electric-sql/pglite node tests/sql.cjs
+```

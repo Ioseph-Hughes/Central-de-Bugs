@@ -128,7 +128,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
     }
   });
 }
-module.exports = { createCentralServer, keyFor };
+module.exports = { createCentralServer, keyFor, validImage };
 if (require.main === module) {
   createCentralServer().then(server => {
     server.listen(4173, '127.0.0.1', () => console.log('Central: http://localhost:4173 — dados em ./data'));

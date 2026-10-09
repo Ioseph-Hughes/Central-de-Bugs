@@ -43,6 +43,18 @@ const { build } = require('../scripts/build.cjs');
     for (const url of ['/server.cjs', '/data', '/.env', '/api/reports']) assert.equal((await fetch(base + url)).status, 404);
     await page.waitForTimeout(3100); // A prévia não inicia o polling de três segundos.
     assert.deepEqual(apiRequests, []); assert.deepEqual(errors, []);
-    console.log('OK: saída estática isolada, painel 200 sem função local, aviso de configuração, envio indisponível, tema e ausência de dados/servidor/API no pacote.');
+    process.env.SUPABASE_URL = 'https://central-test.supabase.co';
+    process.env.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_TEST_PUBLIC';
+    process.env.SUPABASE_SECRET_KEY = 'sb_secret_NEVER_PUBLISH';
+    await build(output);
+    assert.ok((await fs.readdir(output)).includes('cloud.js'));
+    const cloudHTML = await fs.readFile(path.join(output,'index.html'),'utf8');
+    assert.match(cloudHTML,/data-central-mode="cloud"/); assert.match(cloudHTML,/<div id="workspace" hidden>/);
+    assert.match(cloudHTML,/src="\/cloud.js"/);
+    const bundle = await fs.readFile(path.join(output,'cloud.js'),'utf8');
+    assert.match(bundle,/sb_publishable_TEST_PUBLIC/); assert.doesNotMatch(bundle,/sb_secret_NEVER_PUBLISH/);
+    assert.doesNotMatch(cloudHTML,/sb_secret_NEVER_PUBLISH/);
+    delete process.env.SUPABASE_URL; delete process.env.SUPABASE_PUBLISHABLE_KEY; delete process.env.SUPABASE_SECRET_KEY;
+    console.log('OK: prévia estática, isolamento de dados/servidor, tema, build Supabase com login e nenhuma chave secreta publicada.');
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); await fs.rm(output, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

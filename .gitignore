@@ -3,3 +3,6 @@ artifacts/
 data/
 dist/
 .vercel/
+.env
+.env.*
+!.env.example

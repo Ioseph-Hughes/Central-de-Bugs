@@ -8,6 +8,12 @@
   <script defer src="/central-bugs.js"></script><script defer src="/dashboard.js"></script>
 </head>
 <body>
+  <section id="login-screen" class="login-screen" hidden aria-labelledby="login-title">
+    <div class="login-card"><span class="logo">◎</span><p class="section-label">CENTRAL DE BUGS</p><h1 id="login-title">Entre na sua Central</h1><p class="muted">Acompanhe os relatos dos seus sistemas com acesso privado.</p>
+      <form id="login-form"><label for="login-email">E-mail</label><input id="login-email" name="email" type="email" autocomplete="username" required><label for="login-password">Senha</label><input id="login-password" name="password" type="password" autocomplete="current-password" required><button class="button primary" type="submit">Entrar</button><p id="login-error" role="alert"></p></form>
+    </div>
+  </section>
+  <div id="workspace">
   <aside class="sidebar">
     <a class="brand" href="/"><span class="logo">◎</span><span>Central de Bugs<small>Seu ponto de melhoria</small></span></a>
     <p class="section-label">SISTEMAS CONECTADOS</p>
@@ -15,7 +21,7 @@
     <div class="sidebar-footer"><span class="connection-dot"></span> Central local <small>Ocorrências salvas em disco</small></div>
   </aside>
   <main>
-    <header class="topbar"><span>Workspace <span class="muted">/</span> <strong>Ocorrências</strong></span><div class="tools"><button id="theme" class="button" aria-pressed="false">Modo escuro</button><button id="refresh" class="button">↻ Atualizar</button></div></header>
+    <header class="topbar"><span>Workspace <span class="muted">/</span> <strong>Ocorrências</strong><small id="admin-email" class="muted"></small></span><div class="tools"><button id="theme" class="button" aria-pressed="false">Modo escuro</button><button id="refresh" class="button">↻ Atualizar</button><button id="logout" class="button" hidden>Sair</button></div></header>
     <section class="page-heading"><div><p class="section-label">ACOMPANHE. ENTENDA. RESOLVA.</p><h1 id="page-title">Todos os sistemas</h1><p class="muted">Bugs, melhorias e ajustes, com todo o contexto em um só lugar.</p></div><button id="open" class="button primary">＋ Testar o widget</button></section>
     <div class="stats" aria-label="Resumo das ocorrências"><div><span>Total de ocorrências</span><strong id="total">0</strong></div><div><span>Novas</span><strong id="new-count">0</strong></div><div><span>Em andamento</span><strong id="progress-count">0</strong></div><div><span>Resolvidas</span><strong id="resolved-count">0</strong></div></div>
     <div class="toolbar"><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" aria-label="Buscar ocorrências" placeholder="Buscar por título, descrição ou sistema…"></label><label class="filter-label">Tipo<select id="type"><option value="">Todos os tipos</option><option value="bug">Bugs / erros</option><option value="melhoria">Melhorias</option><option value="ajuste">Ajustes</option></select></label><label class="filter-label">Status<select id="status-filter"><option value="">Todos os status</option><option value="novo">Novo</option><option value="em-analise">Em análise</option><option value="em-correcao">Em correção</option><option value="resolvido">Resolvido</option></select></label></div>
@@ -25,5 +31,6 @@
     <footer class="page-footer">Cada envio pertence ao sistema identificado pelo plugin. <a href="/central-bugs.js" download>Baixar plugin ↗</a></footer>
   </main>
   <dialog id="detail" aria-labelledby="detail-title"><div class="detail-top"><span class="section-label">DETALHES DA OCORRÊNCIA</span><button id="close-detail" class="button" aria-label="Fechar detalhes">×</button></div><div id="detail-content"></div></dialog>
+  </div>
 </body>
 </html>

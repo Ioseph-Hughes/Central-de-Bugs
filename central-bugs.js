@@ -108,7 +108,7 @@
     const launcher = $('.launcher'), dialog = $('dialog'), form = $('form'), status = $('.status');
     const cleanup = new AbortController();
     let type = 'bug', attachments = [], busy = false, capturing = false, destroyed = false;
-    let draftId = crypto.randomUUID();
+    let draftId = crypto.randomUUID(), submittedDraft;
     let activeStream, pendingRequest, returnFocus;
 
     function message(text = '', success = false) { status.textContent = text; status.classList.toggle('success', success); }
@@ -177,7 +177,7 @@
     }
     function clearDraft() {
       for (const item of attachments) URL.revokeObjectURL(item.url);
-      attachments = []; form.reset(); renderAttachments(); draftId = crypto.randomUUID();
+      attachments = []; form.reset(); renderAttachments(); draftId = crypto.randomUUID(); submittedDraft = undefined;
     }
     function choose(nextType) {
       type = nextType; $('.choices').hidden = true; form.hidden = false;
@@ -239,17 +239,43 @@
       try { for (const link of links) if (!['https:', 'http:'].includes(new URL(link).protocol)) throw new Error(); }
       catch { message('Confira os links: use URLs completas começando com https:// ou http://.'); return; }
       if (!config.endpoint && typeof config.onSubmit !== 'function') { message('O envio ainda não está configurado. Seu relato continua aqui.'); return; }
-      const report = {
+      const signature = JSON.stringify({ type, title, description, links, user: config.user });
+      const files = attachments.map(item => item.file);
+      const unchanged = submittedDraft && submittedDraft.signature === signature && submittedDraft.files.length === files.length && files.every((file,index) => file === submittedDraft.files[index]);
+      if (submittedDraft && !unchanged) draftId = crypto.randomUUID();
+      const report = unchanged ? submittedDraft.report : {
         schemaVersion: 1, id: draftId, projectId: config.projectId, type, title, description, links,
         createdAt: new Date().toISOString(),
         context: { url: location.href, pageTitle: document.title, language: navigator.language, viewport: { width: innerWidth, height: innerHeight } },
         ...(config.user ? { user: config.user } : {}),
         attachments: attachments.map(({ file }) => ({ name: file.name, type: file.type, size: file.size }))
       };
+      submittedDraft = { signature, files, report };
       busy = true; $('fieldset').disabled = true; $('.submit').textContent = 'Enviando…'; message();
       let timeout;
       try {
         if (typeof config.onSubmit === 'function') await config.onSubmit({ report, files: attachments.map(item => item.file) });
+        else if (config.transport === 'signed-upload') {
+          pendingRequest = new AbortController();
+          async function requestJSON(value) {
+            const response = await fetch(config.endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value), signal: AbortSignal.any([pendingRequest.signal, AbortSignal.timeout(30000)]) });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+            return payload;
+          }
+          const prepared = await requestJSON({ action: 'prepare', report });
+          if (!prepared.ready) {
+            if (!Array.isArray(prepared.uploads) || prepared.uploads.length !== files.length) throw new Error('A Central retornou uma preparação de envio inválida.');
+            for (const [index,slot] of prepared.uploads.entries()) {
+              if (slot.uploaded) continue;
+              const url = new URL(slot.url);
+              if (url.protocol !== 'https:' && url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') throw new Error('Endereço de upload inválido.');
+              const response = await fetch(url, { method: 'PUT', headers: { 'Content-Type': files[index].type, 'x-upsert': 'false' }, body: files[index], signal: AbortSignal.any([pendingRequest.signal, AbortSignal.timeout(120000)]) });
+              if (!response.ok) throw new Error(`Não foi possível enviar a imagem ${index + 1}. Tente novamente.`);
+            }
+            await requestJSON({ action: 'commit', key: prepared.key, receipt: prepared.receipt });
+          }
+        }
         else {
           const body = new FormData(); body.append('report', JSON.stringify(report));
           attachments.forEach(({ file }) => body.append('attachments', file, file.name));
@@ -258,8 +284,8 @@
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
         }
         if (!destroyed) { clearDraft(); message(config.successMessage || 'Relato enviado. Obrigado por ajudar a melhorar o sistema!', true); }
-      } catch {
-        if (!destroyed) message('Não foi possível enviar. Seu texto e suas imagens foram preservados. Tente novamente.');
+      } catch (error) {
+        if (!destroyed) message(`${config.transport === 'signed-upload' && error.name === 'Error' ? error.message + '\n' : ''}Não foi possível enviar. Seu texto e suas imagens foram preservados. Tente novamente.`);
       } finally {
         clearTimeout(timeout); pendingRequest = undefined; busy = false; $('fieldset').disabled = false; $('.submit').textContent = 'Enviar relato ↗';
       }
@@ -309,7 +335,7 @@
   }
   window.CentralBugs = { init };
   if (script?.dataset.projectId) {
-    const start = () => { window.CentralBugs.instance = init({ projectId: script.dataset.projectId, endpoint: script.dataset.endpoint, position: script.dataset.position }); };
+    const start = () => { window.CentralBugs.instance = init({ projectId: script.dataset.projectId, endpoint: script.dataset.endpoint, position: script.dataset.position, transport: script.dataset.transport }); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
     else start();
   }
