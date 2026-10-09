@@ -1,0 +1,12 @@
+{
+  "name": "central-de-bugs",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Widget de feedback independente para integrar aos seus SaaS",
+  "scripts": {
+    "test": "node tests/widget.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
