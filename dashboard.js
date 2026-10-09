@@ -2,6 +2,7 @@
 (() => {
   'use strict';
   const $ = selector => document.querySelector(selector);
+  const preview = document.documentElement.dataset.centralMode === 'preview';
   const names = { 'radar-contratual': 'Radar Contratual', 'central-demo': 'Central · Testes' };
   const types = { bug: 'Bug / erro', melhoria: 'Melhoria', ajuste: 'Ajuste' };
   const states = { novo: 'Novo', 'em-analise': 'Em análise', 'em-correcao': 'Em correção', resolvido: 'Resolvido' };
@@ -69,8 +70,8 @@
     const list = $('#reports'); list.replaceChildren();
     if (!filtered.length) {
       const empty = element('div', undefined, 'empty');
-      empty.append(element('strong', current.length ? 'Nenhuma ocorrência com estes filtros.' : 'Tudo começa com o primeiro relato.'),
-        element('span', current.length ? 'Altere a busca, o tipo ou o status para ver outros resultados.' : 'Os relatos enviados pelo plugin aparecerão aqui, separados por sistema.'));
+      empty.append(element('strong', preview ? 'Conecte o armazenamento da Central.' : current.length ? 'Nenhuma ocorrência com estes filtros.' : 'Tudo começa com o primeiro relato.'),
+        element('span', preview ? 'Esta prévia ainda não recebe relatos. Os sistemas aparecerão com suas ocorrências após configurar o serviço online.' : current.length ? 'Altere a busca, o tipo ou o status para ver outros resultados.' : 'Os relatos enviados pelo plugin aparecerão aqui, separados por sistema.'));
       list.append(empty);
     }
     for (const id of ids) {
@@ -157,9 +158,18 @@
   $('#refresh').onclick = refresh;
   $('#search').oninput = render; $('#type').onchange = render; $('#status-filter').onchange = render;
   $('#close-detail').onclick = () => $('#detail').close();
+  themeButton(); render();
+  if (preview) {
+    const footer = $('.sidebar-footer'); footer.replaceChildren(element('span', 'Prévia online'), element('small', 'Armazenamento aguardando configuração'));
+    $('#open').disabled = true; $('#open').textContent = 'Envio ainda não configurado';
+    $('#refresh').disabled = true;
+    $('#sync').textContent = 'Prévia · sem conexão ao armazenamento';
+    showError('O painel foi publicado. Para receber e acompanhar relatos, falta conectar o armazenamento online e configurar o acesso.');
+    return; // A prévia não inicia o widget nem faz requisições a uma API inexistente.
+  }
   window.feedback = CentralBugs.init({ projectId: 'central-demo', endpoint: '/api/reports', successMessage: 'Relato salvo na Central! Ele aparecerá na caixa de entrada.' });
   $('#open').onclick = () => feedback.open();
-  themeButton(); render(); refresh();
+  refresh();
   const timer = setInterval(() => { if (!document.hidden) refresh(); }, 3000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   window.addEventListener('pagehide', () => clearInterval(timer));

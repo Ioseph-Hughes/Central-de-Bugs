@@ -27,6 +27,24 @@ Este receptor é para testes locais: escuta apenas em loopback e aceita as orige
 
 O receptor antigo armazenava somente o último relato em memória, sem guardar os arquivos. Esses envios não constituem um histórico recuperável. Uma ocorrência importada desse receptor deve indicar explicitamente as imagens indisponíveis.
 
+## Publicar a prévia do painel na Vercel
+
+O repositório agora inclui `vercel.json` e `npm run build`. O build cria `dist/` com apenas `index.html`, `dashboard.css`, `dashboard.js` e `central-bugs.js`. A Vercel serve esses arquivos sem executar `server.cjs`, que depende de portas e armazenamento local.
+
+Essa publicação é **uma prévia da interface**, sem recebimento de relatos, API ou login de produção. O painel informa que o armazenamento online está pendente e mantém o envio desativado. A Central local iniciada com `npm start` continua funcionando com seus dados em disco.
+
+No projeto da Vercel:
+
+1. Conecte o repositório `Ioseph-Hughes/Central-de-Bugs` e publique a versão atualizada da branch `main`.
+2. Em **Settings → Build and Deployment**, confira **Framework Preset: Other**.
+3. O arquivo `vercel.json` define **Build Command: npm run build** e **Output Directory: dist**. A raiz deve ser a pasta deste repositório.
+4. Faça uma nova publicação a partir do commit que contém essa configuração. Reexecutar um deployment antigo pode reutilizar o código anterior.
+5. Abra o endereço principal do projeto e confira o aviso de armazenamento pendente.
+
+Nenhuma variável de ambiente é necessária para a prévia. Configurar chaves do Supabase ainda não conecta o receptor: a API, as tabelas, as permissões, o login e o upload online precisam ser implementados antes do uso real. As funções da Vercel têm limites de requisição que exigem adaptar o envio de imagens.
+
+Se aparecer **500 FUNCTION_INVOCATION_FAILED**, abra os logs da função na Vercel. Esse código de erro sozinho não identifica a causa. O servidor local original não é um receptor pronto para a Vercel; o build estático remove essa dependência da abertura do painel.
+
 ## Instalar em um SaaS
 
 Copie `central-bugs.js` para os arquivos públicos do seu frontend e adicione uma única tag HTML. O botão aparece automaticamente:
@@ -124,7 +142,7 @@ npx playwright install chromium
 npm test
 ```
 
-Os testes iniciam e encerram seus próprios servidores locais. `tests/central.cjs` verifica dois relatos enviados de outra origem ao painel, isolamento por sistema, detalhes, imagens binárias, busca, alteração de status, modo escuro, responsividade, deduplicação e recuperação após reiniciar o receptor. Nenhum teste altera a pasta real `data/`. Para usar um Chromium já instalado, informe `CHROMIUM_PATH=/caminho/do/chromium npm test`. A autorização real para captura de tela depende da interface do navegador e deve ser conferida manualmente.
+Os testes iniciam e encerram seus próprios servidores locais. `tests/build.cjs` verifica a prévia estática, seus arquivos públicos, o aviso de configuração e a ausência de envio/polling sem backend. `tests/central.cjs` verifica dois relatos enviados de outra origem ao painel, isolamento por sistema, detalhes, imagens binárias, busca, alteração de status, modo escuro, responsividade, deduplicação e recuperação após reiniciar o receptor. Nenhum teste altera a pasta real `data/`. Para usar um Chromium já instalado, informe `CHROMIUM_PATH=/caminho/do/chromium npm test`. A autorização real para captura de tela depende da interface do navegador e deve ser conferida manualmente.
 
 ## API da Central local
 

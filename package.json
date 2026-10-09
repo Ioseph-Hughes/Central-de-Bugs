@@ -4,8 +4,10 @@
   "private": true,
   "description": "Widget de feedback independente para integrar aos seus SaaS",
   "scripts": {
+    "build": "node scripts/build.cjs",
     "start": "node server.cjs",
-    "test": "node tests/central.cjs && node tests/widget.cjs",
+    "test": "node tests/build.cjs && node tests/central.cjs && node tests/widget.cjs",
+    "test:build": "node tests/build.cjs",
     "test:receiver": "node tests/central.cjs"
   },
   "devDependencies": {

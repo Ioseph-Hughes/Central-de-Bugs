@@ -1,3 +1,5 @@
 node_modules/
 artifacts/
 data/
+dist/
+.vercel/
