@@ -1,4 +1,4 @@
-# Central de Bugs · v0.2
+# Central de Bugs · v0.3
 
 Widget de feedback reutilizável, em JavaScript puro, sem instalação de pacotes ou etapa de build. A interface fica em um Shadow DOM para isolar seus estilos do SaaS.
 
@@ -7,10 +7,25 @@ Widget de feedback reutilizável, em JavaScript puro, sem instalação de pacote
 Na pasta do projeto:
 
 ```sh
-python3 -m http.server 4173 --bind 127.0.0.1
+npm start
 ```
 
-Abra http://localhost:4173. A demonstração recebe relatos **apenas na memória da página**; recarregar apaga os relatos. O plugin não contém um backend nem armazena relatos em um servidor.
+Com Node.js 20 ou superior, abra http://localhost:4173. O painel e o receptor local agora compartilham uma caixa de entrada persistente. O Radar de teste em `localhost:4180` continua enviando para `http://127.0.0.1:4181/reports`.
+
+O comando inicia as portas 4173 (painel/API) e 4181 (receptor compatível com o Radar). Não use o servidor Python antigo em paralelo. As duas portas atendem à mesma Central.
+
+- Sistemas separados na navegação e nas listas; novos `projectId` aparecem no primeiro relato.
+- Ocorrências de bug/erro, melhoria ou ajuste, com busca e filtros de tipo/status.
+- Detalhes com texto completo, imagens, links, página de origem, horário e contexto.
+- Status: novo, em análise, em correção e resolvido.
+- Atualização automática a cada três segundos com a aba visível e atualização manual.
+- Modo claro/escuro com preferência persistida no navegador; inicialmente segue o sistema.
+
+Os relatos e arquivos são salvos em `data/`, que está excluída do Git. Recarga e reinício do servidor mantêm relatos, imagens e status. Cada envio é confirmado somente depois de gravar o registro e seus arquivos; novas tentativas com o mesmo par `projectId` + `id` não duplicam ocorrências. Faça backup dessa pasta para preservar os dados ao mover a Central.
+
+Este receptor é para testes locais: escuta apenas em loopback e aceita as origens `localhost`/`127.0.0.1` das portas 4173 e 4180. Não há autenticação de produção. A Central definitiva precisará do serviço autenticado e hospedado que será definido depois. O limite do receptor local é 64 MB por requisição; o widget continua sem limite de texto ou quantidade de imagens imposto pela interface.
+
+O receptor antigo armazenava somente o último relato em memória, sem guardar os arquivos. Esses envios não constituem um histórico recuperável. Uma ocorrência importada desse receptor deve indicar explicitamente as imagens indisponíveis.
 
 ## Instalar em um SaaS
 
@@ -98,8 +113,8 @@ O servidor deve permitir CORS para as origens dos SaaS, validar os campos e arqu
 
 O exemplo de integração com o frontend Next.js do Radar está em
 [integrations/radar-contratual.md](integrations/radar-contratual.md). Há um
-receptor local, somente em memória, para verificar o envio antes da definição
-da Central: `npm run test:receiver`.
+receptor local persistente para verificar o envio antes da definição
+da Central definitiva: `npm start`. `npm run test:receiver` executa a verificação automatizada da Central em portas temporárias.
 
 O teste de navegador em `tests/widget.cjs` verifica instalação por uma tag, arraste com mouse e toque, recolhimento nas quatro bordas, envio multipart, recuperação de falha, anexos, links, preferências, isolamento de conteúdo, captura simulada e navegação por teclado. Para executá-lo, use Node.js 20 ou superior. As dependências abaixo são apenas para desenvolvimento; o widget distribuído continua independente:
 
@@ -109,4 +124,13 @@ npx playwright install chromium
 npm test
 ```
 
-O teste inicia e encerra seu próprio servidor local. Para usar um Chromium já instalado, informe `CHROMIUM_PATH=/caminho/do/chromium npm test`. A autorização real para captura de tela depende da interface do navegador e deve ser conferida manualmente.
+Os testes iniciam e encerram seus próprios servidores locais. `tests/central.cjs` verifica dois relatos enviados de outra origem ao painel, isolamento por sistema, detalhes, imagens binárias, busca, alteração de status, modo escuro, responsividade, deduplicação e recuperação após reiniciar o receptor. Nenhum teste altera a pasta real `data/`. Para usar um Chromium já instalado, informe `CHROMIUM_PATH=/caminho/do/chromium npm test`. A autorização real para captura de tela depende da interface do navegador e deve ser conferida manualmente.
+
+## API da Central local
+
+- `POST /reports` ou `POST /api/reports`: recebe o multipart do widget.
+- `GET /api/reports`: lista os registros persistidos com `key`, `report`, `attachments`, `status` e datas.
+- `PATCH /api/reports/:key`: altera o status com JSON, por exemplo `{"status":"em-correcao"}`.
+- `GET /attachments/:key/:indice`: disponibiliza a imagem armazenada.
+
+O caminho da imagem é retornado pelo receptor; nomes de arquivos enviados não são usados como caminhos no disco. O receptor grava arquivos temporários e publica o registro por renomeação antes de responder. A implementação local usa um único processo/fila de escrita; para múltiplos processos, substitua o armazenamento por um banco transacional.

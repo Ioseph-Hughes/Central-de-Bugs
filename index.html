@@ -2,74 +2,28 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Central de Bugs · Demonstração</title>
-  <style>
-    *{box-sizing:border-box}body{margin:0;background:#f7f8f2;color:#23392e;font:15px/1.6 system-ui,sans-serif}button,a{font:inherit}button{cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid #b3583f;outline-offset:4px}
-    nav{border-bottom:1px solid #dde4d7;padding:20px 5vw;display:flex;align-items:center;justify-content:space-between;background:#fffefa;gap:20px}.brand{display:flex;align-items:center;gap:12px;font-weight:750;letter-spacing:-.5px}.mark{background:#2e4a38;color:#fff;border-radius:12px;padding:6px 12px;font-size:22px}.nav-note{font-size:12px;color:#627360}
-    main{max-width:1200px;padding:64px 32px 100px;margin:auto}.eyebrow{font-size:11px;letter-spacing:2px;font-weight:750;color:#738267;text-transform:uppercase}h1{font-size:clamp(36px,5vw,62px);letter-spacing:-2.6px;line-height:1.12;font-weight:650;max-width:720px;margin:18px 0 22px}.intro{max-width:610px;color:#65715e;font-size:17px}.intro strong{color:#334d3c;font-weight:600}
-    .actions{display:flex;gap:10px;flex-wrap:wrap;margin:28px 0 48px}.button{border:1px solid #d3ddcc;background:#fffefa;color:#334d3c;padding:11px 17px;border-radius:9px;text-decoration:none}.button.primary{background:#2f4b3a;color:white;border-color:#2f4b3a}.button:hover{filter:brightness(.95)}
-    .workspace{display:grid;grid-template-columns:1.15fr 1fr;gap:24px}.card{background:#fffefa;border:1px solid #dbe2d3;border-radius:18px;overflow:hidden}.card-head{padding:22px 26px;border-bottom:1px solid #e3e8dc;display:flex;justify-content:space-between;align-items:center;gap:10px}h2{font-size:16px;margin:0;letter-spacing:-.3px}.pill{background:#edf2e7;color:#586f47;padding:4px 10px;border-radius:20px;font-size:11px;white-space:nowrap}.content{padding:26px}.hint{font-size:13px;color:#7c856f;margin:8px 0 0}
-    .example{display:flex;gap:14px;align-items:center;margin-bottom:22px}.avatar{background:#e2e9d8;border-radius:12px;width:44px;height:44px;display:grid;place-items:center;color:#425a38;font-weight:700}.example strong{display:block}.label{font-size:12px;color:#7b866f}.task{display:flex;justify-content:space-between;border-top:1px solid #e7eadf;padding:16px 0;gap:16px;font-size:13px}.task:last-child{padding-bottom:0}.dot{color:#ac6546}.empty{min-height:214px;display:grid;place-content:center;text-align:center;color:#738267;padding:24px;gap:8px}.empty span{font-size:30px;color:#a7b49a}.empty p{margin:0;font-size:13px}.report{border-bottom:1px solid #e3e8dc;padding:18px 24px}.report:last-child{border:0}.report h3{margin:8px 0;font-size:15px}.report p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;color:#65715e}.report small{font-size:11px}.preview{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.preview img{width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid #dde3d6}.links{margin:12px 0 0;padding-left:20px;font-size:13px;overflow-wrap:anywhere}.links a{color:#526d42}
-    .integration{margin-top:34px;padding:22px 26px;background:#eef1e6;border-radius:14px;display:grid;grid-template-columns:1fr 1.2fr;gap:24px;align-items:center}.integration p{margin:8px 0;font-size:13px;color:#64725b}pre{margin:0;padding:16px;background:#253a30;color:#e7eddf;border-radius:10px;overflow:auto;font:12px/1.7 ui-monospace,monospace}.note{font-size:12px;color:#7e8773;margin-top:24px}
-    @media(max-width:750px){main{padding:40px 20px 90px}.workspace,.integration{grid-template-columns:1fr}nav{padding:16px 20px}.nav-note{max-width:140px;text-align:right}h1{letter-spacing:-1.5px}.actions{margin-bottom:28px}}
-  </style>
+  <title>Central de Bugs · Ocorrências</title>
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('central-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch{}</script>
+  <link rel="stylesheet" href="/dashboard.css">
+  <script defer src="/central-bugs.js"></script><script defer src="/dashboard.js"></script>
 </head>
 <body>
-  <nav><div class="brand"><span class="mark">◎</span> Central de Bugs</div><span class="nav-note">Widget v0.2 · ambiente de demonstração</span></nav>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="logo">◎</span><span>Central de Bugs<small>Seu ponto de melhoria</small></span></a>
+    <p class="section-label">SISTEMAS CONECTADOS</p>
+    <nav id="systems" aria-label="Sistemas"></nav>
+    <div class="sidebar-footer"><span class="connection-dot"></span> Central local <small>Ocorrências salvas em disco</small></div>
+  </aside>
   <main>
-    <div class="eyebrow">Do problema ao próximo passo</div>
-    <h1>Boas melhorias começam<br>com uma conversa.</h1>
-    <p class="intro">Um canal de feedback dentro de qualquer SaaS. <strong>Abra o botão no canto da tela</strong>, conte o que aconteceu e inclua as imagens que ajudam a explicar.</p>
-    <div class="actions"><button class="button primary" id="open">Testar o widget ↗</button><button class="button" id="restore">Expandir botão</button><a class="button" href="./central-bugs.js" download>Baixar plugin ↓</a></div>
-    <div class="workspace">
-      <section class="card" aria-labelledby="project-title"><div class="card-head"><h2 id="project-title">Um SaaS de exemplo</h2><span class="pill">Projeto: demo-saas</span></div><div class="content">
-        <div class="example"><div class="avatar">OP</div><div><strong>Orbit Projetos</strong><span class="label">Área de trabalho da equipe</span></div></div>
-        <div class="task"><span>Website do cliente</span><span class="dot">Em revisão</span></div><div class="task"><span>Integração de pagamentos</span><span>Em andamento</span></div><div class="task"><span>Painel de relatórios</span><span>Concluído</span></div>
-        <p class="hint">Experimente enviar um relato sobre esta tela. Arraste o botão até uma borda para recolher; clique na seta para expandir ou arraste a seta para movê-la.</p>
-      </div></section>
-      <section class="card" aria-labelledby="reports-title"><div class="card-head"><h2 id="reports-title">Relatos da demonstração</h2><span class="pill" id="count">0 relatos</span></div><div id="reports" aria-live="polite"><div class="empty"><span>↗</span><strong>Espaço para ouvir.</strong><p>Seu primeiro relato aparecerá aqui.<br>Inclua uma ideia, um bug ou um ajuste.</p></div></div></section>
-    </div>
-    <section class="integration"><div><h2>Um script. Todos os seus sistemas.</h2><p>Copie o arquivo do widget para o SaaS e adicione esta tag ao frontend. O botão aparece automaticamente.</p></div><pre>&lt;script defer
-  src="/central-bugs.js"
-  data-project-id="meu-saas"
-  data-endpoint="https://sua-central.com/relatos"
-&gt;&lt;/script&gt;</pre></section>
-    <p class="note">Nesta demonstração, os relatos ficam apenas na memória desta página e desaparecem ao recarregar. Nenhum relato é enviado para uma Central externa.</p>
+    <header class="topbar"><span>Workspace <span class="muted">/</span> <strong>Ocorrências</strong></span><div class="tools"><button id="theme" class="button" aria-pressed="false">Modo escuro</button><button id="refresh" class="button">↻ Atualizar</button></div></header>
+    <section class="page-heading"><div><p class="section-label">ACOMPANHE. ENTENDA. RESOLVA.</p><h1 id="page-title">Todos os sistemas</h1><p class="muted">Bugs, melhorias e ajustes, com todo o contexto em um só lugar.</p></div><button id="open" class="button primary">＋ Testar o widget</button></section>
+    <div class="stats" aria-label="Resumo das ocorrências"><div><span>Total de ocorrências</span><strong id="total">0</strong></div><div><span>Novas</span><strong id="new-count">0</strong></div><div><span>Em andamento</span><strong id="progress-count">0</strong></div><div><span>Resolvidas</span><strong id="resolved-count">0</strong></div></div>
+    <div class="toolbar"><label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" aria-label="Buscar ocorrências" placeholder="Buscar por título, descrição ou sistema…"></label><label class="filter-label">Tipo<select id="type"><option value="">Todos os tipos</option><option value="bug">Bugs / erros</option><option value="melhoria">Melhorias</option><option value="ajuste">Ajustes</option></select></label><label class="filter-label">Status<select id="status-filter"><option value="">Todos os status</option><option value="novo">Novo</option><option value="em-analise">Em análise</option><option value="em-correcao">Em correção</option><option value="resolvido">Resolvido</option></select></label></div>
+    <div class="list-heading"><h2>Caixa de entrada <span id="visible-count" class="count">0</span></h2><span id="sync" class="muted" role="status">Conectando à Central…</span></div>
+    <div id="error" role="alert" hidden></div>
+    <div id="reports"></div>
+    <footer class="page-footer">Cada envio pertence ao sistema identificado pelo plugin. <a href="/central-bugs.js" download>Baixar plugin ↗</a></footer>
   </main>
-  <script src="./central-bugs.js"></script>
-  <script>
-    let count = 0;
-    const demoUrls = [];
-    window.feedback = CentralBugs.init({
-      projectId: 'demo-saas',
-      successMessage: 'Relato recebido na demonstração! Ele aparece no painel desta página.',
-      onSubmit: async ({ report, files }) => {
-        const list = document.querySelector('#reports');
-        if (!count) list.replaceChildren();
-        const card = document.createElement('article'); card.className = 'report';
-        const meta = document.createElement('small'); meta.textContent = `${report.type.toUpperCase()} · ${new Date(report.createdAt).toLocaleTimeString('pt-BR')}`;
-        const title = document.createElement('h3'); title.textContent = report.title;
-        const description = document.createElement('p'); description.textContent = report.description;
-        card.append(meta, title, description);
-        if (report.links.length) {
-          const links = document.createElement('ul'); links.className = 'links';
-          for (const url of report.links) {
-            const item = document.createElement('li'), link = document.createElement('a');
-            link.href = url; link.textContent = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; item.append(link); links.append(item);
-          }
-          card.append(links);
-        }
-        if (files.length) {
-          const previews = document.createElement('div'); previews.className = 'preview';
-          for (const file of files) { const image = document.createElement('img'); image.src = URL.createObjectURL(file); demoUrls.push(image.src); image.alt = file.name; previews.append(image); }
-          card.append(previews);
-        }
-        list.prepend(card); count++; document.querySelector('#count').textContent = `${count} ${count === 1 ? 'relato' : 'relatos'}`;
-      }
-    });
-    document.querySelector('#open').onclick = () => feedback.open();
-    document.querySelector('#restore').onclick = () => feedback.show();
-    window.addEventListener('pagehide', () => demoUrls.forEach(url => URL.revokeObjectURL(url)));
-  </script>
+  <dialog id="detail" aria-labelledby="detail-title"><div class="detail-top"><span class="section-label">DETALHES DA OCORRÊNCIA</span><button id="close-detail" class="button" aria-label="Fechar detalhes">×</button></div><div id="detail-content"></div></dialog>
 </body>
 </html>

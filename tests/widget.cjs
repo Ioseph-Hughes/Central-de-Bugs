@@ -19,7 +19,22 @@ const { chromium } = require('playwright');
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.end('<!doctype html><html lang="pt-BR"><head><title>Instalação automática</title><script defer src="/central-bugs.js" data-project-id="auto-test" data-endpoint="/reports"></script></head><body><h1>Meu SaaS</h1></body></html>'); return;
     }
-    const files = { '/': 'index.html', '/central-bugs.js': 'central-bugs.js' };
+    if (req.url === '/') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.end(`<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Teste isolado do widget</title><style>body{margin:0}.report p{white-space:pre-wrap;overflow-wrap:anywhere}.report img{width:50px}</style></head><body>
+        <button id="open">Testar o widget</button><div id="reports"></div><script src="/central-bugs.js"></script><script>
+        window.feedback = CentralBugs.init({projectId:'demo-saas', successMessage:'Relato recebido na demonstração!',
+          onSubmit:async ({report,files}) => {
+            const card=document.createElement('article');card.className='report';
+            const p=document.createElement('p');p.textContent=report.description;card.append(p);
+            for(const url of report.links){const a=document.createElement('a');a.href=url;a.textContent=url;card.append(a)}
+            for(const file of files){const img=document.createElement('img');img.src=URL.createObjectURL(file);card.append(img)}
+            document.querySelector('#reports').append(card);
+          }});
+        document.querySelector('#open').onclick=()=>feedback.open();
+        </script></body></html>`); return;
+    }
+    const files = { '/central-bugs.js': 'central-bugs.js' };
     if (!files[req.url]) { res.writeHead(404); res.end(); return; }
     res.setHeader('Content-Type', req.url.endsWith('.js') ? 'application/javascript' : 'text/html; charset=utf-8');
     res.end(fs.readFileSync(path.join(directory, files[req.url])));
@@ -46,7 +61,7 @@ const { chromium } = require('playwright');
     await assertStatus(widget, 'Confira os links');
     assert.equal(await page.locator('.report').count(), 0);
     await widget.getByLabel('Links', { exact: false }).fill('https://example.com/primeiro\nhttps://example.com/segundo');
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jH1kAAAAASUVORK5CYII=', 'base64');
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
     await widget.locator('input[type=file]').setInputFiles([
       { name: 'tela.png', mimeType: 'image/png', buffer: png },
       { name: 'outra-tela.png', mimeType: 'image/png', buffer: png }
@@ -109,6 +124,7 @@ const { chromium } = require('playwright');
     const afterReload = await widget.locator('.launcher').boundingBox();
     assert.ok(Math.abs(beforeReload.y - afterReload.y) < 1);
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForFunction(() => document.querySelector('[data-central-bugs]').shadowRoot.querySelector('.restore').getBoundingClientRect().right === 390);
     const arrowBounds = await widget.locator('.restore').boundingBox();
     assert.equal(arrowBounds.x + arrowBounds.width, 390);
     assert.ok(arrowBounds.y >= 0 && arrowBounds.y + arrowBounds.height <= 844);

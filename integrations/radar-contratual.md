@@ -50,7 +50,7 @@ verificada com frames simulados nos seus testes automatizados.
 No projeto Central de Bugs, com Node.js 20 ou superior:
 
 ```sh
-npm run test:receiver
+npm start
 ```
 
 No `.env.local` da cópia de teste do Radar, mantenha somente as configurações
@@ -61,19 +61,22 @@ NEXT_PUBLIC_CENTRAL_BUGS_ENDPOINT=http://127.0.0.1:4181/reports
 ```
 
 Inicie o Radar em `localhost:4180`, usando o pnpm 10.11.0 declarado no projeto.
-O receptor aceita somente as origens locais `localhost:4180` e
-`127.0.0.1:4180`. Os relatos ficam em memória; encerrá-lo apaga os dados.
-`http://127.0.0.1:4181/latest` permite conferir o último relato e os metadados
-dos arquivos recebidos. Nenhum relato deste teste é enviado a um serviço externo.
-Para verificar o receptor automaticamente, execute
-`node tests/mock-receiver.cjs --check`; ele abre e encerra uma porta temporária.
+A Central aceita as origens locais `localhost:4180` e `127.0.0.1:4180`, além do próprio painel em 4173. Abra http://localhost:4173 para ver a seção **Radar Contratual**. Os relatos aparecem automaticamente, com detalhes e imagens; são salvos em `data/` e continuam disponíveis após recarga e reinício.
+
+`http://127.0.0.1:4181/api/reports` permite conferir os registros recebidos. O endpoint `/latest` do receptor antigo foi substituído pela lista completa. Nenhum relato deste teste é enviado a um serviço externo.
+
+Para verificar o receptor e o painel automaticamente, execute `npm run test:receiver`. Ele usa armazenamento temporário e encerra suas próprias portas. Não inicia o ambiente de testes do usuário.
 
 ## Antes da publicação
 
 - Definir o receptor definitivo e substituir a configuração local pelo endereço
-  real. O receptor deste repositório é apenas um instrumento de teste.
+  real. O receptor deste repositório é uma Central local de testes, com armazenamento em disco e sem autenticação de produção.
 - Validar páginas autenticadas com uma conta de teste.
 - Executar os checks do Radar e seguir suas regras de aprovação para produção.
 
 Sem endpoint configurado, o widget mantém o rascunho e informa que o envio está
 pendente de configuração.
+
+## Painel conectado · v0.3
+
+O painel inicial era uma demonstração separada do receptor do Radar. Na v0.3, os dois usam o mesmo armazenamento. A interface organiza sistemas e ocorrências, permite acompanhar o status e oferece modo escuro. O receptor antigo mantinha apenas o último relato em memória e descartava os binários; não existe recuperação retroativa do histórico anterior.
