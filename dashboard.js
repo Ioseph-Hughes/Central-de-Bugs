@@ -28,6 +28,11 @@
     if (!response.ok) throw new Error(`A Central respondeu com erro ${response.status}.`);
     return response.json();
   }
+  async function saveStatus(key, status) {
+    const saved = await api(`/api/reports/${key}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    records = records.map(record => record.key === key ? saved : record);
+    fingerprint = ''; render(); return saved;
+  }
   async function refresh() {
     if (loading) return;
     loading = true; $('#refresh').disabled = true;
@@ -82,7 +87,17 @@
           element('span', `${item.attachments.length} imagem(ns) · ${report.links.length} link(s)`));
         content.append(element('strong', report.title), element('span', report.description, 'excerpt'), meta);
         row.append(element('span', icons[report.type], 'type-icon'), content, element('span', states[item.status], `badge status-badge ${item.status}`));
-        row.onclick = () => openDetail(item.key); rows.append(row);
+        row.onclick = () => openDetail(item.key);
+        const wrapper = element('article', undefined, 'occurrence-row');
+        const resolve = element('button', item.status === 'resolvido' ? '✓ Resolvido' : 'Resolver', 'button resolve');
+        resolve.disabled = item.status === 'resolvido';
+        resolve.setAttribute('aria-label', `${resolve.disabled ? 'Ocorrência resolvida' : 'Resolver ocorrência'}: ${report.title}`);
+        resolve.onclick = async () => {
+          resolve.disabled = true; resolve.textContent = 'Salvando…';
+          try { await saveStatus(item.key, 'resolvido'); showError(''); $('#sync').textContent = 'Ocorrência marcada como resolvida.'; }
+          catch { resolve.disabled = false; resolve.textContent = 'Resolver'; showError('Não foi possível resolver esta ocorrência. Tente novamente.'); }
+        };
+        wrapper.append(row, resolve); rows.append(wrapper);
       }
       section.append(heading, rows); list.append(section);
     }
@@ -103,9 +118,8 @@
     select.onchange = async () => {
       select.disabled = true; statusMessage.textContent = 'Salvando…';
       try {
-        const saved = await api(`/api/reports/${key}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: select.value }) });
-        records = records.map(record => record.key === key ? saved : record);
-        item.status = saved.status; fingerprint = ''; render(); statusMessage.textContent = 'Status salvo.';
+        const saved = await saveStatus(key, select.value);
+        item.status = saved.status; statusMessage.textContent = 'Status salvo.';
       } catch { select.value = item.status; statusMessage.textContent = 'Falha ao salvar. Tente novamente.'; }
       finally { select.disabled = false; }
     };

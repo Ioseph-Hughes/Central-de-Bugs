@@ -17,7 +17,7 @@ O comando inicia as portas 4173 (painel/API) e 4181 (receptor compatível com o 
 - Sistemas separados na navegação e nas listas; novos `projectId` aparecem no primeiro relato.
 - Ocorrências de bug/erro, melhoria ou ajuste, com busca e filtros de tipo/status.
 - Detalhes com texto completo, imagens, links, página de origem, horário e contexto.
-- Status: novo, em análise, em correção e resolvido.
+- Status: novo, em análise, em correção e resolvido. O botão **Resolver** em cada ocorrência marca como resolvida diretamente na lista; a alteração fica salva e pode ser revista nos detalhes.
 - Atualização automática a cada três segundos com a aba visível e atualização manual.
 - Modo claro/escuro com preferência persistida no navegador; inicialmente segue o sistema.
 

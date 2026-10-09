@@ -47,12 +47,12 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await send('bug', 'Falha ao salvar', description);
     await send('melhoria', 'Incluir busca por contrato', 'Sugestão de busca avançada.');
     // Outra origem enviando: os dois relatos aparecem automaticamente no painel já aberto.
-    await dashboard.getByRole('button', { name: /Falha ao salvar/ }).waitFor({ timeout: 10000 });
-    await dashboard.getByRole('button', { name: /Incluir busca por contrato/ }).waitFor({ timeout: 10000 });
+    await dashboard.locator('.occurrence').filter({ hasText: 'Falha ao salvar' }).waitFor({ timeout: 10000 });
+    await dashboard.locator('.occurrence').filter({ hasText: 'Incluir busca por contrato' }).waitFor({ timeout: 10000 });
     assert.equal(await dashboard.locator('.occurrence').count(), 2);
     await dashboard.getByRole('button', { name: /Radar Contratual/ }).click();
     assert.equal(await dashboard.locator('#total').textContent(), '2');
-    await dashboard.getByRole('button', { name: /Falha ao salvar/ }).click();
+    await dashboard.locator('.occurrence').filter({ hasText: 'Falha ao salvar' }).click();
     assert.equal(await dashboard.locator('.description').textContent(), description);
     assert.equal(await dashboard.evaluate(() => window.injetado), undefined);
     assert.equal(await dashboard.locator('.gallery img').count(), 2);
@@ -80,15 +80,29 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await demo.getByRole('button', { name: 'Enviar relato' }).click();
     await demo.locator('.status').filter({ hasText: 'Relato salvo na Central' }).waitFor();
     await demo.getByRole('button', { name: 'Fechar', exact: true }).click();
-    await dashboard.getByRole('button', { name: /Ajustar espaçamento/ }).waitFor({ timeout: 10000 });
+    await dashboard.locator('.occurrence').filter({ hasText: 'Ajustar espaçamento' }).waitFor({ timeout: 10000 });
     assert.equal(await dashboard.locator('.occurrence').count(), 1);
     await dashboard.getByRole('button', { name: /Todos os sistemas/ }).click();
     assert.equal(await dashboard.locator('.system-group').count(), 2);
     await dashboard.getByLabel('Buscar ocorrências').fill('busca avançada');
     assert.equal(await dashboard.locator('.occurrence').count(), 1);
     await dashboard.getByLabel('Buscar ocorrências').fill('');
+    // Resolver pela lista altera somente a ocorrência escolhida, sem abrir detalhes.
+    await dashboard.getByRole('button', { name: 'Resolver ocorrência: Incluir busca por contrato', exact: true }).click();
+    await dashboard.getByRole('button', { name: 'Ocorrência resolvida: Incluir busca por contrato', exact: true }).waitFor();
+    assert.equal(await dashboard.getByRole('button', { name: 'Ocorrência resolvida: Incluir busca por contrato', exact: true }).isEnabled(), false);
+    assert.equal(await dashboard.locator('#detail').isVisible(), false);
+    assert.equal(await dashboard.locator('#resolved-count').textContent(), '1');
+    // Erro do servidor mantém o status e permite tentar novamente.
+    await dashboard.route('**/api/reports/*', route => route.fulfill({ status: 503, body: '{}' }));
+    await dashboard.getByRole('button', { name: 'Resolver ocorrência: Ajustar espaçamento', exact: true }).click();
+    await dashboard.getByText('Não foi possível resolver esta ocorrência. Tente novamente.', { exact: true }).waitFor();
+    assert.equal(await dashboard.getByRole('button', { name: 'Resolver ocorrência: Ajustar espaçamento', exact: true }).isEnabled(), true);
+    await dashboard.unroute('**/api/reports/*');
     const received = (await (await fetch(`${central}/api/reports`)).json()).reports;
     assert.equal(received.length, 3);
+    assert.equal(received.find(item => item.report.title === 'Incluir busca por contrato').status, 'resolvido');
+    assert.equal(received.find(item => item.report.title === 'Ajustar espaçamento').status, 'novo');
     const saved = received.find(item => item.report.title === 'Falha ao salvar');
     const image = await fetch(central + saved.attachments[0].url);
     assert.deepEqual(Buffer.from(await image.arrayBuffer()), png);
@@ -110,13 +124,14 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal(await dashboard.locator('.occurrence').count(), 3);
     const afterRestart = (await (await fetch(`${central}/api/reports`)).json()).reports;
     assert.equal(afterRestart.find(item => item.key === saved.key).status, 'em-correcao');
+    assert.equal(afterRestart.find(item => item.report.title === 'Incluir busca por contrato').status, 'resolvido');
     assert.deepEqual(Buffer.from(await (await fetch(central + saved.attachments[0].url)).arrayBuffer()), png);
     await dashboard.setViewportSize({ width: 390, height: 844 });
     assert.equal(await dashboard.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    await dashboard.getByRole('button', { name: /Falha ao salvar/ }).click();
+    await dashboard.locator('.occurrence').filter({ hasText: 'Falha ao salvar' }).click();
     const bounds = await dashboard.locator('#detail').boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390);
     assert.deepEqual(errors, []);
-    console.log('OK: dois envios do SaaS chegam ao painel, sistemas separados, detalhes completos, imagens binárias, busca, status, tema, celular, retry e persistência após reinício.');
+    console.log('OK: dois envios do SaaS chegam ao painel, sistemas separados, detalhes completos, imagens binárias, busca, status, botão Resolver com recuperação de falha, tema, celular, retry e persistência após reinício.');
   } finally { await browser?.close(); if (saas) await close(saas); if (server) await close(server); await fs.rm(dataDir, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
