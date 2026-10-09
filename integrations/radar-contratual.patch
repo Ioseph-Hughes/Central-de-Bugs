@@ -1,0 +1,18 @@
+diff --git a/app/layout.tsx b/app/layout.tsx
+index b957d11..2b3e2f1 100644
+--- a/app/layout.tsx
++++ b/app/layout.tsx
+@@ -23,6 +23,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
+           {`(function(){try{var key="radar-contratual-theme";var saved=window.localStorage.getItem(key);var dark=window.matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.radarTheme=saved==="dark"||(!saved&&dark)?"dark":"light";}catch(_){}})()`}
+         </Script>
+         {children}
++        <Script
++          id="central-bugs-widget"
++          src="/central-bugs.js"
++          strategy="afterInteractive"
++          data-project-id="radar-contratual"
++          data-endpoint={process.env.NEXT_PUBLIC_CENTRAL_BUGS_ENDPOINT}
++        />
+       </body>
+     </html>
+   );

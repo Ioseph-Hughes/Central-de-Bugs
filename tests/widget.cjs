@@ -94,6 +94,7 @@ const { chromium } = require('playwright');
     await dragTo(widget.locator('.grip'), 1439, 800);
     assert.equal(await widget.locator('.launcher.collapsed').count(), 1);
     assert.equal(await widget.locator('.launcher').getAttribute('data-edge'), 'right');
+    assert.ok((await widget.locator('.launcher').boundingBox()).x + (await widget.locator('.launcher').boundingBox()).width <= await page.evaluate(() => document.documentElement.clientWidth));
     await page.screenshot({ path: path.join(directory, 'artifacts', 'recolhido.png') });
     for (const [x, y, edge, arrow] of [[1, 400, 'left', '→'], [700, 1, 'top', '↓'], [800, 999, 'bottom', '↑'], [1439, 300, 'right', '←']]) {
       await dragTo(widget.locator('.restore'), x, y);

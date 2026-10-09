@@ -4,7 +4,8 @@
   "private": true,
   "description": "Widget de feedback independente para integrar aos seus SaaS",
   "scripts": {
-    "test": "node tests/widget.cjs"
+    "test": "node tests/widget.cjs",
+    "test:receiver": "node tests/mock-receiver.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

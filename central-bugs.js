@@ -114,12 +114,14 @@
     function message(text = '', success = false) { status.textContent = text; status.classList.toggle('success', success); }
     function savePreferences() { try { localStorage.setItem(storageKey, JSON.stringify(preferences)); } catch { /* Opcional. */ } }
     const clamp = value => Math.max(0, Math.min(1, value));
+    const viewport = () => ({ width: document.documentElement.clientWidth, height: document.documentElement.clientHeight });
     function placeLauncher() {
       launcher.classList.toggle('collapsed', preferences.hidden);
       launcher.dataset.edge = preferences.edge;
       $('.restore').textContent = { left: '→', right: '←', top: '↓', bottom: '↑' }[preferences.edge];
       const margin = preferences.hidden ? 0 : 20;
-      const width = Math.max(0, innerWidth - launcher.offsetWidth), height = Math.max(0, innerHeight - launcher.offsetHeight);
+      const size = viewport();
+      const width = Math.max(0, size.width - launcher.offsetWidth), height = Math.max(0, size.height - launcher.offsetHeight);
       let left = Math.min(margin, width) + preferences.x * Math.max(0, width - margin * 2);
       let top = Math.min(margin, height) + preferences.y * Math.max(0, height - margin * 2);
       if (preferences.hidden) {
@@ -133,7 +135,8 @@
       $('#cb-position').value = preferences.position;
     }
     function nearestEdge(rect) {
-      return Object.entries({ left: rect.left, right: innerWidth - rect.right, top: rect.top, bottom: innerHeight - rect.bottom }).sort((a, b) => a[1] - b[1])[0];
+      const size = viewport();
+      return Object.entries({ left: rect.left, right: size.width - rect.right, top: rect.top, bottom: size.height - rect.bottom }).sort((a, b) => a[1] - b[1])[0];
     }
     function setPosition(position) {
       if (!positions.includes(position)) throw new Error('Posição inválida.');
@@ -277,7 +280,8 @@
         if (!drag || event.pointerId !== drag.pointerId) return;
         if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6 && !drag.moved) return;
         drag.moved = true;
-        Object.assign(launcher.style, { left: `${Math.max(0, Math.min(innerWidth - launcher.offsetWidth, event.clientX - drag.x))}px`, top: `${Math.max(0, Math.min(innerHeight - launcher.offsetHeight, event.clientY - drag.y))}px` });
+        const size = viewport();
+        Object.assign(launcher.style, { left: `${Math.max(0, Math.min(size.width - launcher.offsetWidth, event.clientX - drag.x))}px`, top: `${Math.max(0, Math.min(size.height - launcher.offsetHeight, event.clientY - drag.y))}px` });
       });
       on(handle, 'pointerup', event => {
         if (!drag || event.pointerId !== drag.pointerId) return;
@@ -288,8 +292,9 @@
         preferences.edge = edge;
         preferences.hidden = preferences.hidden || distance <= 32;
         const margin = preferences.hidden ? 0 : 20;
-        preferences.x = clamp((rect.left - margin) / Math.max(1, innerWidth - rect.width - margin * 2));
-        preferences.y = clamp((rect.top - margin) / Math.max(1, innerHeight - rect.height - margin * 2));
+        const size = viewport();
+        preferences.x = clamp((rect.left - margin) / Math.max(1, size.width - rect.width - margin * 2));
+        preferences.y = clamp((rect.top - margin) / Math.max(1, size.height - rect.height - margin * 2));
         preferences.position = `${preferences.y < .5 ? 'top' : 'bottom'}-${preferences.x < .5 ? 'left' : 'right'}`;
         placeLauncher(); savePreferences();
       });

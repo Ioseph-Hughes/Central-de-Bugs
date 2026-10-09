@@ -96,6 +96,11 @@ O servidor deve permitir CORS para as origens dos SaaS, validar os campos e arqu
 
 ## Verificação
 
+O exemplo de integração com o frontend Next.js do Radar está em
+[integrations/radar-contratual.md](integrations/radar-contratual.md). Há um
+receptor local, somente em memória, para verificar o envio antes da definição
+da Central: `npm run test:receiver`.
+
 O teste de navegador em `tests/widget.cjs` verifica instalação por uma tag, arraste com mouse e toque, recolhimento nas quatro bordas, envio multipart, recuperação de falha, anexos, links, preferências, isolamento de conteúdo, captura simulada e navegação por teclado. Para executá-lo, use Node.js 20 ou superior. As dependências abaixo são apenas para desenvolvimento; o widget distribuído continua independente:
 
 ```sh
