@@ -1,6 +1,6 @@
 {
   "name": "central-de-bugs",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Widget de feedback independente para integrar aos seus SaaS",
   "engines": { "node": "22.x" },

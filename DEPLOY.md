@@ -91,7 +91,7 @@ Use esse mesmo `id` na tag do plugin. O nome aparecerá automaticamente no paine
 
 O widget primeiro reserva a ocorrência, envia as imagens diretamente para URLs assinadas do Supabase e pede a confirmação final. A Central verifica tamanho, MIME e assinatura dos arquivos antes de tornar a ocorrência visível. Falhas mantêm o rascunho no navegador; a nova tentativa reutiliza os arquivos recebidos e o identificador, sem duplicar a ocorrência. Editar um relato após uma falha cria uma nova reserva, preservando a consistência dos arquivos.
 
-Imagens são privadas. O painel gera links com duração de uma hora ao abrir os detalhes; reabra os detalhes quando um link expirar. A captura nativa requer HTTPS ou localhost e autorização do navegador.
+Imagens são privadas. O painel gera links com duração de uma hora ao abrir os detalhes; reabra os detalhes quando um link expirar. O formulário oferece **Selecionar área** (prévia com recorte) e **Tela inteira**. A captura nativa requer HTTPS ou localhost e autorização do navegador. O propósito e o uso geral do plugin estão em [GUIA-DO-PLUGIN.md](GUIA-DO-PLUGIN.md).
 
 O widget não limita o texto ou a quantidade de fotos na interface. A API aceita até **1 MB de texto e metadados por relato**; o bucket aceita até **50 MB por imagem**, sujeito aos limites do plano Supabase. As fotos não passam pela função da Vercel, que possui limite de corpo de requisição. A API permite 20 novas reservas por origem de rede/sistema em 10 minutos e 500 por sistema/dia; esses valores estão em `central_reserve` no SQL. Tentativas da mesma reserva não consomem novas ocorrências.
 

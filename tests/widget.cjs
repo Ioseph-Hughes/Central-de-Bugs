@@ -171,23 +171,103 @@ const { chromium } = require('playwright');
 
     // Captura cancelada, captura de frame simulada e fim do compartilhamento.
     await page.evaluate(() => Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => { throw new DOMException('cancel', 'NotAllowedError'); } }));
-    await widget.getByRole('button', { name: 'Capturar tela' }).click();
+    await widget.getByRole('button', { name: 'Tela inteira' }).click();
     await assertStatus(widget, 'Captura cancelada');
     assert.equal(await widget.locator('dialog').isVisible(), true);
     await page.evaluate(() => Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => {
       const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 480;
-      const ctx = canvas.getContext('2d'); ctx.fillStyle = '#2f4b3a'; ctx.fillRect(0, 0, 640, 480);
+      const ctx = canvas.getContext('2d');
+      const paint = () => { ctx.fillStyle = '#2f4b3a'; ctx.fillRect(0, 0, 640, 480); ctx.fillStyle = '#ba5039'; ctx.fillRect(160, 120, 320, 240); ctx.fillStyle = 'white'; ctx.font = '18px sans-serif'; ctx.fillText('Valor da variável: R$ 1.23', 180, 220); ctx.fillText('Esperado: R$ 1.234', 180, 250); }; paint();
       window.captureStream = canvas.captureStream(10);
-      const timer = setInterval(() => ctx.fillRect(0, 0, 640, 480), 50);
+      const timer = setInterval(paint, 50);
       const track = captureStream.getTracks()[0], originalStop = track.stop.bind(track);
       track.stop = () => { clearInterval(timer); originalStop(); };
       return captureStream;
     } }));
-    await widget.getByRole('button', { name: 'Capturar tela' }).click();
+    await widget.getByRole('button', { name: 'Tela inteira' }).click();
     await widget.locator('.attachment').waitFor();
     assert.match(await widget.locator('.attachment span').textContent(), /^captura-\d+\.png$/);
     assert.equal(await page.evaluate(() => captureStream.getTracks()[0].readyState), 'ended');
     await widget.locator('dialog').waitFor({ state: 'visible' });
+    async function attachmentPixels(index = 0) {
+      return widget.locator('.attachment img').nth(index).evaluate(async img => {
+        await img.decode(); const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0);
+        return { width: canvas.width, height: canvas.height, pixel: [...ctx.getImageData(0, 0, 1, 1).data] };
+      });
+    }
+    assert.deepEqual(await attachmentPixels(), { width: 640, height: 480, pixel: [47, 75, 58, 255] });
+
+    // Prévia reduzida: arraste invertido deve recortar os pixels da região original.
+    await page.setViewportSize({ width: 1440, height: 800 });
+    await widget.getByLabel('Título', { exact: true }).fill('Valor incompleto na variável');
+    await widget.locator('textarea[name=description]').fill('O valor deveria conter todos os números.');
+    await widget.getByRole('button', { name: 'Selecionar área' }).click();
+    const crop = widget.locator('.crop-dialog');
+    await crop.waitFor({ state: 'visible' });
+    assert.equal(await page.evaluate(() => captureStream.getTracks()[0].readyState), 'ended');
+    assert.equal(await crop.getByRole('button', { name: 'Anexar recorte' }).isDisabled(), true);
+    const preview = await crop.locator('canvas').boundingBox();
+    assert.ok(preview.width < 640, 'Prévia precisa exercitar conversão de escala.');
+    await page.mouse.move(preview.x + preview.width * .75, preview.y + preview.height * .75);
+    await page.mouse.down();
+    await page.mouse.move(preview.x + preview.width * .25, preview.y + preview.height * .25, { steps: 8 });
+    await page.mouse.up();
+    await page.screenshot({ path: path.join(directory, 'artifacts', 'selecao-area.png'), fullPage: true });
+    assert.match(await crop.locator('.crop-info').textContent(), /320 × 240 px/);
+    await crop.getByRole('button', { name: 'Anexar recorte' }).click();
+    await widget.locator('.attachment').nth(1).waitFor();
+    assert.deepEqual(await attachmentPixels(1), { width: 320, height: 240, pixel: [186, 80, 57, 255] });
+    assert.match(await widget.locator('.attachment span').nth(1).textContent(), /^recorte-\d+\.png$/);
+    assert.equal(await widget.locator('.capture-area').evaluate(node => node.getRootNode().activeElement === node), true);
+
+    // Cancelamento por botão e Escape preserva rascunho e os dois anexos.
+    for (const cancelWith of ['button', 'escape']) {
+      await widget.getByRole('button', { name: 'Selecionar área' }).click(); await crop.waitFor();
+      if (cancelWith === 'button') await crop.getByRole('button', { name: 'Cancelar', exact: true }).click();
+      else await page.keyboard.press('Escape');
+      await assertStatus(widget, 'Recorte cancelado');
+      assert.equal(await widget.locator('.attachment').count(), 2);
+      assert.equal(await widget.getByLabel('Título', { exact: true }).inputValue(), 'Valor incompleto na variável');
+      assert.equal(await widget.locator('fieldset').isDisabled(), false);
+      assert.equal(await crop.count(), 0);
+    }
+
+    // Medidas por teclado, limite da imagem e layout móvel.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await widget.getByRole('button', { name: 'Selecionar área' }).click(); await crop.waitFor();
+    const cropBounds = await crop.boundingBox();
+    assert.ok(cropBounds.x >= 0 && cropBounds.x + cropBounds.width <= 390);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    const mobilePreview = await crop.locator('canvas').boundingBox();
+    await crop.locator('canvas').click();
+    assert.equal(await crop.getByRole('button', { name: 'Anexar recorte' }).isDisabled(), true);
+    const cropTouch = await page.context().newCDPSession(page);
+    await cropTouch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mobilePreview.x + mobilePreview.width * .1, y: mobilePreview.y + mobilePreview.height * .1 }] });
+    await cropTouch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: mobilePreview.x + mobilePreview.width * .5, y: mobilePreview.y + mobilePreview.height * .5 }] });
+    await cropTouch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await cropTouch.detach();
+    assert.match(await crop.locator('.crop-info').textContent(), /256 × 192 px/);
+    await crop.getByText('Ajustar recorte por medidas').click();
+    await crop.getByLabel('Esquerda (px)').fill('630'); await page.keyboard.press('Tab');
+    await crop.getByLabel('Topo (px)').fill('470'); await page.keyboard.press('Tab');
+    await crop.getByLabel('Largura (px)').fill('5000'); await page.keyboard.press('Tab');
+    await crop.getByLabel('Altura (px)').fill('5000'); await page.keyboard.press('Tab');
+    assert.match(await crop.locator('.crop-info').textContent(), /10 × 10 px/);
+    await page.screenshot({ path: path.join(directory, 'artifacts', 'selecao-area-mobile.png'), fullPage: true });
+    await crop.getByRole('button', { name: 'Anexar recorte' }).focus(); await page.keyboard.press('Enter');
+    await widget.locator('.attachment').nth(2).waitFor();
+    assert.deepEqual(await attachmentPixels(2), { width: 10, height: 10, pixel: [47, 75, 58, 255] });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.screenshot({ path: path.join(directory, 'artifacts', 'capturas-anexadas.png'), fullPage: true });
+
+    // A mesma pipeline envia o PNG recortado, sem anexar outra imagem completa.
+    await widget.getByRole('button', { name: 'Enviar relato' }).click(); await assertStatus(widget, 'Relato enviado');
+    const captured = extractReport(requests[2]);
+    assert.equal(captured.attachments.length, 3);
+    assert.match(captured.attachments[1].name, /^recorte-/);
+    assert.ok(captured.attachments[1].size < captured.attachments[0].size);
     await widget.getByRole('button', { name: 'Fechar', exact: true }).click();
     await page.getByRole('button', { name: 'Testar o widget' }).focus();
     await page.keyboard.press('Enter'); await page.keyboard.press('Escape');
@@ -212,13 +292,29 @@ const { chromium } = require('playwright');
     await autoWidget.locator('textarea[name=description]').fill('Mais espaço entre os campos.');
     await autoWidget.getByRole('button', { name: 'Enviar relato' }).click();
     await assertStatus(autoWidget, 'Relato enviado');
-    assert.equal(extractReport(requests[2]).projectId, 'auto-test');
+    assert.equal(extractReport(requests[3]).projectId, 'auto-test');
     await page.evaluate(() => CentralBugs.instance.hide());
     assert.equal(await autoWidget.locator('.restore').isVisible(), true);
     await autoWidget.locator('.restore').click();
     assert.equal(await autoWidget.locator('.launch').isVisible(), true);
     await page.evaluate(() => CentralBugs.instance.destroy());
     assert.equal(await page.locator('[data-central-bugs]').count(), 0);
+    // Desmontar durante a seleção encerra a promessa e remove a prévia.
+    await page.goto(origin);
+    await page.getByRole('button', { name: 'Testar o widget' }).click();
+    await widget.getByRole('button', { name: 'Relatar um bug' }).click();
+    await page.evaluate(() => Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => {
+      const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 32;
+      const ctx = canvas.getContext('2d'); window.captureStream = canvas.captureStream(10);
+      const timer = setInterval(() => ctx.fillRect(0, 0, 32, 32), 50);
+      const track = captureStream.getTracks()[0], stop = track.stop.bind(track);
+      track.stop = () => { clearInterval(timer); stop(); }; return captureStream;
+    } }));
+    await widget.getByRole('button', { name: 'Selecionar área' }).click();
+    await widget.locator('.crop-dialog').waitFor();
+    await page.evaluate(() => feedback.destroy());
+    assert.equal(await widget.count(), 0);
+    assert.equal(await page.evaluate(() => captureStream.getTracks()[0].readyState), 'ended');
     assert.deepEqual(errors, []);
     console.log('OK: instalação por tag, recolhimento/arraste nas 4 bordas, persistência, envio, erro/retry, anexos, captura, teclado e celular.');
   } finally {

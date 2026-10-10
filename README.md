@@ -1,6 +1,8 @@
-# Central de Bugs · v0.4
+# Central de Bugs · v0.5
 
 Widget de feedback reutilizável, em JavaScript puro, sem instalação de pacotes ou etapa de build. A interface fica em um Shadow DOM para isolar seus estilos do SaaS.
+
+Para entender o propósito, o fluxo de uso e como compartilhar a integração, leia [GUIA-DO-PLUGIN.md](GUIA-DO-PLUGIN.md).
 
 ## Testar agora
 
@@ -91,7 +93,7 @@ const feedback = CentralBugs.init({
 
 - Bug, melhoria ou ajuste; título, texto livre e múltiplos links HTTP/HTTPS.
 - Múltiplas imagens PNG, JPEG, WebP, GIF e AVIF, com prévia e remoção.
-- Upload, colagem de prints e captura nativa da tela.
+- Upload, colagem de prints e duas opções lado a lado: **Selecionar área** ou **Tela inteira**. A seleção abre uma prévia para arrastar o recorte ou ajustar suas medidas por teclado; somente o PNG recortado é anexado. Cancelar mantém o rascunho. O compartilhamento termina antes da edição.
 - Arraste o botão pela alça ou pelo próprio texto. Solte junto a uma borda (até 32 px) para recolher; solte no interior para mantê-lo expandido.
 - Recolhido, mostra somente uma seta apontando para dentro da tela. Clique para expandir ou arraste a seta até outra posição/borda, inclusive nos cantos. Também há um botão de recolher e escolha de cantos pelo menu, acessíveis por teclado.
 - Posição proporcional à janela, borda e estado recolhido persistem no navegador por projeto e se ajustam a mudanças de resolução. Texto e anexos ficam somente na memória, preservados ao fechar o formulário ou após falha no envio, e são apagados após sucesso.
@@ -134,7 +136,7 @@ O exemplo de integração com o frontend Next.js do Radar está em
 receptor local persistente para verificar o envio antes da definição
 da Central definitiva: `npm start`. `npm run test:receiver` executa a verificação automatizada da Central em portas temporárias.
 
-O teste de navegador em `tests/widget.cjs` verifica instalação por uma tag, arraste com mouse e toque, recolhimento nas quatro bordas, envio multipart, recuperação de falha, anexos, links, preferências, isolamento de conteúdo, captura simulada e navegação por teclado. Para executá-lo, use Node.js 22. As dependências abaixo são apenas para desenvolvimento; o widget distribuído continua independente:
+O teste de navegador em `tests/widget.cjs` verifica instalação por uma tag, arraste com mouse e toque, recolhimento nas quatro bordas, envio multipart, recuperação de falha, anexos, links, preferências, isolamento de conteúdo, captura simulada completa e recortada (dimensões e pixels), cancelamento e navegação por teclado. Para executá-lo, use Node.js 22. As dependências abaixo são apenas para desenvolvimento; o widget distribuído continua independente:
 
 ```sh
 npm install

@@ -46,6 +46,12 @@
     .status.success { color: #326344; } footer { border-top: 1px solid #e4e7de; margin-top: 20px; padding-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     details { border-top: 1px solid #e4e7de; padding-top: 14px; } summary { cursor: pointer; color: #64725f; font-size: 12px; }
     .preferences { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; } .preferences > div { flex: 1; } .preferences label { font-size: 12px; }
+    .crop-dialog { width: min(960px, calc(100vw - 24px)); }
+    .crop-stage { position: relative; margin: 16px auto; touch-action: none; user-select: none; overflow: hidden; cursor: crosshair; background: #e4e7de; }
+    .crop-stage canvas { display: block; width: 100%; height: auto; }
+    .crop-selection { position: absolute; border: 2px solid #fff; outline: 1px solid #253a32; box-shadow: 0 0 0 2000px #14251e88; pointer-events: none; }
+    .crop-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .crop-fields label { font-size: 12px; } .crop-fields input { padding: 8px; }
     @media(max-width: 480px) { header { padding: 22px 20px 12px; } .body { padding: 0 20px 20px; } .launcher button { padding: 8px; } }
   `;
 
@@ -92,7 +98,8 @@
               <label for="cb-text">O que aconteceu?</label><textarea id="cb-text" name="description" placeholder="Descreva o problema, o que você esperava ou sua ideia…" required></textarea>
               <label for="cb-links">Links <span class="muted">· opcional</span></label><textarea id="cb-links" name="links" class="links" placeholder="Um link por linha"></textarea>
               <label>Imagens <span class="muted">· opcional</span></label>
-              <div class="row"><button type="button" class="secondary upload">＋ Adicionar imagens</button><button type="button" class="secondary capture">▣ Capturar tela</button></div>
+              <div class="row"><button type="button" class="secondary upload">＋ Adicionar imagens</button></div>
+              <div class="row" style="margin-top:8px"><button type="button" class="secondary capture-area">✂ Selecionar área</button><button type="button" class="secondary capture">▣ Tela inteira</button></div>
               <input class="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" multiple hidden aria-label="Selecionar imagens">
               <p class="muted" style="margin-top:8px">Você também pode colar um print neste formulário.</p>
               <div class="attachments" aria-label="Imagens anexadas"></div>
@@ -200,7 +207,83 @@
       if (files.length) { event.preventDefault(); addFiles(files); }
     });
 
-    on($('.capture'), 'click', async () => {
+    function selectArea(canvas) {
+      return new Promise(resolve => {
+        const crop = document.createElement('dialog'); crop.className = 'crop-dialog';
+        crop.setAttribute('aria-labelledby', 'cb-crop-title');
+        crop.setAttribute('aria-describedby', 'cb-crop-help');
+        crop.innerHTML = `<header><div><p class="eyebrow">Captura de tela</p><h2 id="cb-crop-title">Selecione a área do erro</h2><p class="muted" id="cb-crop-help">Arraste sobre a imagem para recortar. Para usar o teclado, ajuste as medidas abaixo, em pixels.</p></div><button type="button" class="icon crop-close" aria-label="Cancelar recorte">×</button></header>
+          <div class="body"><div class="crop-stage"><div class="crop-selection" hidden></div></div>
+            <p class="muted crop-info" role="status" aria-live="polite">Nenhuma área selecionada.</p>
+            <details><summary>Ajustar recorte por medidas</summary><div class="crop-fields">
+              <div><label for="cb-crop-x">Esquerda (px)</label><input id="cb-crop-x" type="number" min="0" step="1" value="0"></div>
+              <div><label for="cb-crop-y">Topo (px)</label><input id="cb-crop-y" type="number" min="0" step="1" value="0"></div>
+              <div><label for="cb-crop-width">Largura (px)</label><input id="cb-crop-width" type="number" min="1" step="1" value="${canvas.width}"></div>
+              <div><label for="cb-crop-height">Altura (px)</label><input id="cb-crop-height" type="number" min="1" step="1" value="${canvas.height}"></div>
+            </div></details>
+            <footer><button type="button" class="secondary crop-cancel">Cancelar</button><button type="button" class="primary crop-confirm" disabled>Anexar recorte</button></footer>
+          </div>`;
+        const stage = crop.querySelector('.crop-stage'), selection = crop.querySelector('.crop-selection');
+        const fields = ['x', 'y', 'width', 'height'].map(name => crop.querySelector(`#cb-crop-${name}`));
+        stage.style.width = `min(100%, ${canvas.width}px, ${48 * canvas.width / canvas.height}dvh)`;
+        canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'Prévia da tela capturada para selecionar a região do erro');
+        stage.prepend(canvas); root.append(crop);
+        let rect, drag;
+        const listeners = new AbortController();
+        const listen = (target, event, fn) => target.addEventListener(event, fn, { signal: listeners.signal });
+        const bounded = (value, max) => Math.max(0, Math.min(max, Math.round(value)));
+        function render(announce = true) {
+          selection.hidden = !rect || !rect.width || !rect.height;
+          crop.querySelector('.crop-confirm').disabled = selection.hidden;
+          if (!rect) { crop.querySelector('.crop-info').textContent = 'Nenhuma área selecionada.'; return; }
+          Object.assign(selection.style, { left: `${rect.x / canvas.width * 100}%`, top: `${rect.y / canvas.height * 100}%`, width: `${rect.width / canvas.width * 100}%`, height: `${rect.height / canvas.height * 100}%` });
+          [rect.x, rect.y, rect.width, rect.height].forEach((value, i) => { fields[i].value = value; });
+          fields[0].max = canvas.width - 1; fields[1].max = canvas.height - 1;
+          fields[2].max = canvas.width - rect.x; fields[3].max = canvas.height - rect.y;
+          if (announce) crop.querySelector('.crop-info').textContent = selection.hidden ? 'Selecione uma área com largura e altura.' : `Área selecionada: ${rect.width} × ${rect.height} px. Somente este recorte será anexado.`;
+        }
+        function point(event) {
+          const bounds = canvas.getBoundingClientRect();
+          return { x: bounded((event.clientX - bounds.left) / bounds.width * canvas.width, canvas.width), y: bounded((event.clientY - bounds.top) / bounds.height * canvas.height, canvas.height) };
+        }
+        function move(event, announce) {
+          if (!drag || event.pointerId !== drag.id) return;
+          const end = point(event);
+          rect = { x: Math.min(drag.x, end.x), y: Math.min(drag.y, end.y), width: Math.abs(end.x - drag.x), height: Math.abs(end.y - drag.y) };
+          render(announce);
+        }
+        function finish(result) {
+          cleanup.signal.removeEventListener('abort', cancel);
+          listeners.abort(); crop.close(); crop.remove(); resolve(result);
+        }
+        const cancel = () => finish(null);
+        listen(stage, 'pointerdown', event => {
+          if (event.button !== 0 || !event.isPrimary) return;
+          event.preventDefault(); drag = { ...point(event), id: event.pointerId, previous: rect };
+          stage.setPointerCapture(event.pointerId); move(event, false);
+        });
+        listen(stage, 'pointermove', event => move(event, false));
+        listen(stage, 'pointerup', event => {
+          if (!drag || event.pointerId !== drag.id) return;
+          move(event, true); drag = undefined; stage.releasePointerCapture(event.pointerId);
+        });
+        listen(stage, 'pointercancel', () => { rect = drag?.previous; drag = undefined; render(); });
+        fields.forEach(field => listen(field, 'change', () => {
+          const values = fields.map(input => Number(input.value));
+          if (fields.some(input => input.value === '') || !values.every(Number.isFinite)) return;
+          const x = bounded(values[0], canvas.width - 1), y = bounded(values[1], canvas.height - 1);
+          rect = { x, y, width: Math.max(1, bounded(values[2], canvas.width - x)), height: Math.max(1, bounded(values[3], canvas.height - y)) }; render();
+        }));
+        listen(crop, 'cancel', event => { event.preventDefault(); cancel(); });
+        listen(crop.querySelector('.crop-close'), 'click', cancel);
+        listen(crop.querySelector('.crop-cancel'), 'click', cancel);
+        listen(crop.querySelector('.crop-confirm'), 'click', () => { if (rect?.width && rect?.height) finish(rect); });
+        cleanup.signal.addEventListener('abort', cancel, { once: true });
+        crop.showModal();
+      });
+    }
+
+    async function capture(area) {
       if (capturing || busy) return;
       if (!navigator.mediaDevices?.getDisplayMedia) { message('Este navegador não oferece captura de tela. Adicione ou cole um print.'); return; }
       capturing = true; $('fieldset').disabled = true; message();
@@ -219,17 +302,28 @@
         const canvas = document.createElement('canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
         if (!canvas.width || !canvas.height) throw new Error('empty-frame');
         canvas.getContext('2d').drawImage(video, 0, 0);
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        activeStream.getTracks().forEach(track => track.stop()); activeStream = undefined; video.srcObject = null;
+        let image = canvas;
+        if (area) {
+          host.style.visibility = '';
+          const rect = await selectArea(canvas);
+          if (!rect || destroyed) { if (!destroyed) message('Recorte cancelado. Seu relato e os anexos foram mantidos.'); return; }
+          image = document.createElement('canvas'); image.width = rect.width; image.height = rect.height;
+          image.getContext('2d').drawImage(canvas, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
+        }
+        const blob = await new Promise(resolve => image.toBlob(resolve, 'image/png'));
         if (!blob) throw new Error('empty-blob');
-        addFiles([new File([blob], `captura-${Date.now()}.png`, { type: 'image/png' })]);
+        addFiles([new File([blob], `${area ? 'recorte' : 'captura'}-${Date.now()}.png`, { type: 'image/png' })]);
       } catch (error) {
         if (!destroyed) message(error.name === 'NotAllowedError' ? 'Captura cancelada. Você pode tentar novamente ou anexar um print.' : 'Não foi possível capturar a tela. Adicione ou cole um print.');
       } finally {
         activeStream?.getTracks().forEach(track => track.stop()); activeStream = undefined;
         capturing = false; $('fieldset').disabled = false; host.style.visibility = '';
-        if (!destroyed && wasOpen) dialog.showModal();
+        if (!destroyed && wasOpen) { dialog.showModal(); $(area ? '.capture-area' : '.capture').focus(); }
       }
-    });
+    }
+    on($('.capture-area'), 'click', () => capture(true));
+    on($('.capture'), 'click', () => capture(false));
 
     on(form, 'submit', async event => {
       event.preventDefault(); if (busy || capturing) return;
