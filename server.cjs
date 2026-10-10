@@ -1,5 +1,6 @@
 // Painel e receptor local compartilham a mesma caixa de entrada em disco.
 const http = require('node:http');
+const registry = require('./registry.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -31,6 +32,12 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
   'http://localhost:4173', 'http://127.0.0.1:4173', 'http://localhost:4180', 'http://127.0.0.1:4180'
 ] } = {}) {
   await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  const registryFile=path.join(dataDir,'systems.json');
+  let catalog;
+  try { catalog=JSON.parse(await fs.readFile(registryFile,'utf8')); }
+  catch (error) { if (error.code!=='ENOENT') throw error; catalog={secret:registry.credential().accessId,projects:[{id:'central-demo',name:'Central · Testes',origins:[]},{id:'radar-contratual',name:'Radar Contratual',origins:[]}]}; }
+  async function saveCatalog(next=catalog) { await fs.writeFile(registryFile+'.tmp',JSON.stringify(next),{mode:0o600}); await fs.rename(registryFile+'.tmp',registryFile); catalog=next; }
+  await saveCatalog();
   const records = new Map();
   for (const name of await fs.readdir(dataDir)) {
     if (!/^[a-f0-9]{64}$/.test(name)) continue;
@@ -53,24 +60,59 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     const origin = req.headers.origin;
-    if (!/^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '') || (origin && !allowedOrigins.includes(origin))) {
+    if (!/^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '') || (origin && !allowedOrigins.includes(origin) && !catalog.projects.some(project=>project.origins.includes(origin)))) {
       json(res, 403, { error: 'Origem não autorizada nesta Central local.' }); return;
     }
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     try {
       const url = new URL(req.url, 'http://localhost');
+      if (url.pathname==='/api/reports' && url.searchParams.get('widget')==='access' && req.method==='POST') {
+        if (origin) throw registry.fail(403,'Solicite o acesso pelo servidor do seu sistema.');
+        const identity=registry.accessInput(JSON.parse(await body(req)));
+        const project=await write(async()=>{
+          const next=structuredClone(catalog), item=next.projects.find(project=>project.access_hash===identity.accessHash);
+          registry.authorizeAccount(item,identity);
+          if (!item.origins.length) item.origins=[identity.origin];
+          item.connected_at=new Date().toISOString(); await saveCatalog(next); return item;
+        });
+        json(res,200,{projectId:project.id,endpoint:`http://${req.headers.host}/api/reports`,transport:'multipart',user:{email:identity.email},token:registry.ticket(project,identity,catalog.secret)}); return;
+      }
+      if (url.pathname==='/api/reports' && url.searchParams.get('systems')==='1') {
+        if (origin && origin!==`http://${req.headers.host}`) throw registry.fail(403,'Gerencie sistemas no painel da Central.');
+        if (req.method==='GET') { json(res,200,{projects:catalog.projects.filter(project=>project.id!=='central-demo').map(registry.publicProject)}); return; }
+        const input=JSON.parse(await body(req));
+        const result=await write(async()=>{
+          const next=structuredClone(catalog);
+          if (req.method==='POST') { const created=registry.create(input); next.projects.push(created.project); await saveCatalog(next); return {project:registry.publicProject(created.project),accessId:created.accessId}; }
+          if (req.method==='PATCH') {
+            const project=next.projects.find(project=>project.id===input.id && project.id!=='central-demo');
+            if (!project) throw registry.fail(404,'Sistema não encontrado.');
+            const changes=registry.fields(input), generated=input.rotateId===true || !project.access_hash ? registry.credential() : null;
+            if (generated) {changes.access_hash=generated.access_hash;changes.connected_at=null;}
+            Object.assign(project,changes); await saveCatalog(next); return {project:registry.publicProject(project),...(generated?{accessId:generated.accessId}:{})};
+          }
+          throw registry.fail(405,'Método não permitido.');
+        });
+        json(res,req.method==='POST'?201:200,result); return;
+      }
       if (req.method === 'GET' && url.pathname === '/api/reports') {
-        json(res, 200, { reports: [...records.values()].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)) }); return;
+        json(res, 200, { reports: [...records.values()].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)),projects:catalog.projects.map(registry.publicProject) }); return;
       }
       if (req.method === 'POST' && ['/reports', '/api/reports'].includes(url.pathname)) {
         const form = await new Request('http://localhost/reports', { method: 'POST', headers: req.headers, body: await body(req) }).formData();
         const report = JSON.parse(form.get('report'));
         const files = form.getAll('attachments');
         validate(report, files);
+        const project=catalog.projects.find(project=>project.id===report.projectId);
+        if (project?.restricted) {
+          const identity=registry.checkTicket(req,project,catalog.secret);
+          if (new URL(report.context.url).origin!==origin) throw registry.fail(400,'Página de origem inválida.');
+          report.user={email:identity.email};
+        }
         const key = keyFor(report);
         const record = await write(async () => {
           if (records.has(key)) return records.get(key); // Retry após resposta perdida não duplica.
@@ -93,6 +135,14 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
         json(res, 201, { id: record.report.id, key }); return;
       }
       const statusMatch = url.pathname.match(/^\/api\/reports\/([a-f0-9]{64})$/);
+      if (req.method==='DELETE' && statusMatch) {
+        if (origin && origin!==`http://${req.headers.host}`) throw registry.fail(403,'Exclua ocorrências no painel da Central.');
+        const removed=await write(async()=>{
+          if (!records.has(statusMatch[1])) return false;
+          await fs.rm(path.join(dataDir,statusMatch[1]),{recursive:true,force:true}); records.delete(statusMatch[1]); return true;
+        });
+        json(res,removed?200:404,removed?{deleted:true}:{error:'Ocorrência não encontrada.'}); return;
+      }
       if (req.method === 'PATCH' && statusMatch) {
         const input = JSON.parse((await body(req)).toString('utf8'));
         if (!states.includes(input.status)) { json(res, 400, { error: 'Status inválido.' }); return; }

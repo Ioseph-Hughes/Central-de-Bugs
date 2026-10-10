@@ -1,8 +1,17 @@
 -- Executar no SQL Editor do Supabase. Pode ser executado novamente.
 begin;
 create table if not exists public.central_projects (
-  id text primary key, name text not null, origins text[] not null default '{}'
+  id text primary key, name text not null, origins text[] not null default '{}',
+  company text, allowed_emails text[] not null default '{}', restricted boolean not null default false,
+  access_hash text, connected_at timestamptz
 );
+-- Compatibilidade ao executar setup sobre uma instalação anterior.
+alter table public.central_projects add column if not exists company text;
+alter table public.central_projects add column if not exists allowed_emails text[] not null default '{}';
+alter table public.central_projects add column if not exists restricted boolean not null default false;
+alter table public.central_projects add column if not exists access_hash text;
+alter table public.central_projects add column if not exists connected_at timestamptz;
+create unique index if not exists central_projects_access on public.central_projects(access_hash) where access_hash is not null;
 create table if not exists public.central_admins (
   user_id uuid primary key references auth.users(id) on delete cascade
 );
@@ -47,7 +56,7 @@ returns setof public.central_report_summaries language sql set search_path='' as
   join public.central_reports full_report using(key)
   join public.central_projects project on project.id=full_report.project_id
   where position(lower(p_query) in lower(concat(full_report.report->>'title',' ',
-    full_report.report->>'description',' ',full_report.project_id,' ',project.name))) > 0;
+    full_report.report->>'description',' ',full_report.project_id,' ',project.name,' ',project.company))) > 0;
 $$;
 revoke all on function public.central_search(text) from public,anon,authenticated;
 grant execute on function public.central_search(text) to service_role;

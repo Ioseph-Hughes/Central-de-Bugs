@@ -2,6 +2,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 const { validImage } = require('../server.cjs');
+const registry = require('../registry.cjs');
 const bucket = 'central-attachments';
 const states = ['novo','em-analise','em-correcao','resolvido'];
 const imageTypes = new Set(['image/png','image/jpeg','image/webp','image/gif','image/avif']);
@@ -66,16 +67,49 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Vary','Origin');
     try {
       if (!client || !secret || !centralOrigin || !supabaseURL) throw fail(503,'Configure SUPABASE_URL, SUPABASE_SECRET_KEY e CENTRAL_ORIGIN na Vercel.');
+      const url = new URL(req.url,'http://localhost');
       const origin = req.headers.origin;
-      const projects = checked(await client.from('central_projects').select('id,name,origins'));
+      // Esta troca exige o ID secreto do SaaS. Nunca aceitar uma chamada direta do navegador.
+      if (req.method === 'POST' && url.searchParams.get('widget') === 'access') {
+        if (origin) throw fail(403,'Solicite o acesso pelo servidor do seu sistema.');
+        const identity=registry.accessInput(await body(req));
+        let project=checked(await client.from('central_projects').select('*').eq('access_hash',identity.accessHash).maybeSingle());
+        registry.authorizeAccount(project,identity);
+        if (!project.origins.length) {
+          checked(await client.from('central_projects').update({origins:[identity.origin]}).eq('id',project.id).eq('origins','{}'));
+          project=checked(await client.from('central_projects').select('*').eq('id',project.id).maybeSingle());
+          registry.authorizeAccount(project,identity);
+        }
+        checked(await client.from('central_projects').update({connected_at:new Date().toISOString()}).eq('id',project.id));
+        json(res,200,{projectId:project.id,endpoint:centralOrigin+'/api/reports',transport:'signed-upload',user:{email:identity.email},token:registry.ticket(project,identity,secret)}); return;
+      }
+      const projects = checked(await client.from('central_projects').select('*'));
       const allowed = origin && (origin === centralOrigin || projects.some(project => project.origins.includes(origin)));
       if (origin && !allowed) throw fail(403,'Domínio não autorizado nesta Central.');
       if (allowed) res.setHeader('Access-Control-Allow-Origin',origin);
-      res.setHeader('Access-Control-Allow-Methods','GET, POST, PATCH, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods','GET, POST, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');
       if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
-      const url = new URL(req.url,'http://localhost');
       const key = req.query?.key || url.searchParams.get('key') || url.pathname.match(/^\/api\/reports\/([a-f0-9]{64})$/)?.[1];
+      if (url.searchParams.get('systems') === '1') {
+        await authorize(req);
+        if (req.method==='GET') { json(res,200,{projects:projects.filter(project=>project.id!=='central-demo').map(registry.publicProject)}); return; }
+        const input=await body(req);
+        if (req.method==='POST') {
+          const created=registry.create(input);
+          checked(await client.from('central_projects').insert(created.project));
+          json(res,201,{project:registry.publicProject(created.project),accessId:created.accessId}); return;
+        }
+        if (req.method==='PATCH') {
+          const old=projects.find(project=>project.id===input.id && project.id!=='central-demo');
+          if (!old) throw fail(404,'Sistema não encontrado.');
+          const changes=registry.fields(input), generated=input.rotateId===true || !old.access_hash ? registry.credential() : null;
+          if (generated) {changes.access_hash=generated.access_hash;changes.connected_at=null;}
+          const saved=checked(await client.from('central_projects').update(changes).eq('id',old.id).select('*').single());
+          json(res,200,{project:registry.publicProject(saved),...(generated?{accessId:generated.accessId}:{})}); return;
+        }
+        throw fail(405,'Método não permitido.');
+      }
       if (req.method === 'GET') {
         await authorize(req);
         if (url.searchParams.get('access') === 'check') { json(res,200,{authorized:true}); return; }
@@ -97,7 +131,17 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
           const item = {key:row.key,report:row.report,attachments:[],attachmentCount:row.attachment_count,linkCount:row.link_count,status:row.status,receivedAt:row.received_at,updatedAt:row.updated_at};
           length += Buffer.byteLength(JSON.stringify(item)); if (length > 2 * 1024 * 1024) break; reports.push(item);
         }
-        json(res,200,{ reports,stats,limited:rows.length===1000 || reports.length<rows.length,projects:projects.map(({id,name}) => ({id,name})) }); return;
+        json(res,200,{ reports,stats,limited:rows.length===1000 || reports.length<rows.length,projects:projects.map(registry.publicProject) }); return;
+      }
+      if (req.method === 'DELETE') {
+        await authorize(req);
+        if (typeof key !== 'string' || !/^[a-f0-9]{64}$/.test(key)) throw fail(400,'Ocorrência inválida.');
+        const row=checked(await client.from('central_reports').select('*').eq('key',key).eq('ready',true).maybeSingle());
+        if (!row) throw fail(404,'Ocorrência não encontrada.');
+        // Só retirar o registro após excluir seus arquivos. Em falha, a operação pode ser repetida.
+        if (row.attachments.length) checked(await client.storage.from(bucket).remove(row.attachments.map(file=>file.path)));
+        checked(await client.from('central_reports').delete().eq('key',key));
+        json(res,200,{deleted:true}); return;
       }
       if (req.method === 'PATCH') {
         await authorize(req);
@@ -114,6 +158,8 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         validate(input.report);
         const report = input.report, project = projects.find(item => item.id === report.projectId);
         if (!project || !(project.origins.includes(origin) || project.id === 'central-demo' && origin === centralOrigin)) throw fail(403,'Sistema ou domínio não autorizado para este envio.');
+        const identity=registry.checkTicket(req,project,secret);
+        if (identity) report.user={email:identity.email};
         if (new URL(report.context.url).origin !== origin) throw fail(400,'Página de origem inválida.');
         const reportKey = hash(JSON.stringify([report.projectId,report.id]));
         const attachments = report.attachments.map((file,index) => ({ name:file.name,type:file.type,size:file.size,path:`${reportKey}/${index}` }));
@@ -138,6 +184,8 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         if (!row || !timingSafeEqual(Buffer.from(receipt(row)),Buffer.from(input.receipt))) throw fail(403,'Comprovante de envio inválido.');
         const project = projects.find(item => item.id === row.project_id);
         if (!project || !(project.origins.includes(origin) || project.id === 'central-demo' && origin === centralOrigin)) throw fail(403,'Origem não autorizada para esta ocorrência.');
+        const identity=registry.checkTicket(req,project,secret);
+        if (identity && row.report.user?.email!==identity.email) throw fail(403,'Este relato pertence a outra conta.');
         if (!row.ready) {
           for (const file of row.attachments) {
             const info = checked(await client.storage.from(bucket).info(file.path));

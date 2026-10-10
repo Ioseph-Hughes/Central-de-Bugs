@@ -12,7 +12,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 (async () => {
   const output = await fs.mkdtemp(path.join(os.tmpdir(),'central-cloud-'));
   const rows = new Map(), files = new Map(), uploadTokens = new Set(), payloads = [];
-  let origin, handler, failCommit = false, browser;
+  let origin, handler, failCommit = false, failDelete = false, browser;
   const projects = [{id:'central-demo',name:'Central · Testes',origins:[]},{id:'radar-contratual',name:'Radar Contratual',origins:['https://radarcontratual.com']}];
   const json = (res,status,data) => { res.writeHead(status,{'Content-Type':'application/json'}); res.end(JSON.stringify(data)); };
   const read = async req => { const chunks=[]; for await (const chunk of req) chunks.push(chunk); return Buffer.concat(chunks); };
@@ -38,7 +38,12 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
       if (p==='/auth/v1/logout') { res.writeHead(204); res.end(); return; }
       if (p.startsWith('/rest/')) {
         assert.equal(req.headers.apikey,'sb_secret_TEST');
-        if (p.endsWith('/central_projects')) return json(res,200,projects);
+        if (p.endsWith('/central_projects')) {
+          let selected=projects.filter(project=>(!url.searchParams.has('id') || url.searchParams.get('id')===`eq.${project.id}`) && (!url.searchParams.has('access_hash') || url.searchParams.get('access_hash')===`eq.${project.access_hash}`) && (!url.searchParams.has('origins') || url.searchParams.get('origins')==='eq.{}' && !project.origins.length));
+          if (req.method==='POST') { const input=JSON.parse(await read(req)); projects.push(input); selected=[input]; }
+          if (req.method==='PATCH') { const changes=JSON.parse(await read(req)); for (const project of selected) Object.assign(project,changes); }
+          return json(res,200,req.headers.accept?.includes('vnd.pgrst.object') ? selected[0] : selected);
+        }
         if (p.endsWith('/central_admins')) return json(res,200,url.searchParams.get('user_id')==='eq.admin-user'?[{user_id:'admin-user'}]:[]);
         if (p.endsWith('/central_report_stats')) return json(res,200,projects.map(project => {
           const list=[...rows.values()].filter(row=>row.ready && row.project_id===project.id);
@@ -60,6 +65,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
             if (changes.ready && failCommit) { failCommit=false; return json(res,503,{code:'test_failure',message:'forced commit failure'}); }
             for (const row of selected) Object.assign(row,changes);
           }
+          if (req.method==='DELETE') { for(const row of selected) rows.delete(row.key); }
           return json(res,200,selected);
         }
         if (p.endsWith('/central_report_summaries') || p.endsWith('/rpc/central_search')) {
@@ -93,7 +99,9 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
           res.setHeader('Content-Type',file.type); res.end(req.headers.range?file.bytes.subarray(0,64):file.bytes); return;
         }
         if (suffix==='/object/central-attachments' && req.method==='DELETE') {
-          assert.equal(req.headers.apikey,'sb_secret_TEST'); const body=JSON.parse(await read(req)); for (const key of body.prefixes) files.delete(key); return json(res,200,[]);
+          assert.equal(req.headers.apikey,'sb_secret_TEST'); const body=JSON.parse(await read(req));
+          if(failDelete) {failDelete=false;return json(res,503,{error:'forced storage failure',message:'forced storage failure'});}
+          for (const key of body.prefixes) files.delete(key); return json(res,200,[]);
         }
       }
       const name=p==='/'?'index.html':p.slice(1);
@@ -148,6 +156,76 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await page.getByRole('button',{name:'Fechar detalhes'}).click(); await page.getByRole('button',{name:'Resolver ocorrência: Teste do envio online',exact:true}).click();
     await page.getByRole('button',{name:'Ocorrência resolvida: Teste do envio online',exact:true}).waitFor(); assert.equal([...rows.values()][0].status,'resolvido'); assert.equal(await page.locator('#resolved-count').innerText(),'1');
     await page.getByRole('searchbox').fill('Texto fora da prévia'); await page.waitForTimeout(600); assert.equal(await page.locator('.occurrence').count(),1);
+    assert.equal(await page.locator('.status-column').count(),4);
+    await page.getByRole('button',{name:'Central de Sistemas'}).click();
+    await page.getByRole('button',{name:'Cadastrar sistema'}).click();
+    await page.getByLabel('Empresa',{exact:true}).fill('Empresa de teste');
+    await page.getByLabel('Nome do sistema',{exact:true}).fill('Sistema cadastrado');
+    await page.getByLabel('Contas principais autorizadas',{exact:true}).fill('mae@example.com\nsegunda@example.com');
+    await page.getByRole('button',{name:'Salvar e gerar ID',exact:true}).click();
+    await page.locator('#integration-dialog').waitFor({state:'visible'});
+    const accessId=await page.locator('#access-id').innerText(); assert.match(accessId,/^cb_[\w-]{43}$/);
+    const registered=projects.find(project=>project.name==='Sistema cadastrado'); assert.ok(registered.restricted);
+    assert.ok((await page.locator('#integration-instructions').innerText()).includes('INTEGRACAO-PARA-IA.md'));
+    await page.getByRole('button',{name:'Fechar integração'}).click(); await page.waitForFunction(()=>document.querySelector('#access-id').textContent==='');
+    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();
+    assert.equal(await page.getByLabel('Contas principais autorizadas',{exact:true}).inputValue(),'mae@example.com\nsegunda@example.com');
+    await page.getByRole('button',{name:'Fechar cadastro'}).click();
+    await page.setViewportSize({width:390,height:844}); assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.setViewportSize({width:1440,height:1000});
+    await page.screenshot({path:path.join(__dirname,'../artifacts/central-sistemas-v06.png'),fullPage:true});
+    // A configuração restrita é usada por um endpoint autenticado do próprio SaaS.
+    const exchange=async(email,id=accessId,requestOrigin)=>fetch(origin+'/api/reports?widget=access',{method:'POST',headers:{'Content-Type':'application/json',...(requestOrigin?{Origin:requestOrigin}:{})},body:JSON.stringify({accessId:id,email,origin})});
+    assert.equal((await exchange('estranho@example.com')).status,403);
+    assert.equal((await exchange('mae@example.com',accessId,origin)).status,403);
+    assert.equal((await exchange('mae@example.com','cb_'+'x'.repeat(43))).status,403);
+    const grant=await (await exchange('MAE@example.com')).json(); assert.equal(grant.projectId,registered.id); assert.equal(grant.user.email,'mae@example.com'); assert.deepEqual(registered.origins,[origin]);
+    assert.equal((await exchange('segunda@example.com')).status,200);
+    const restrictedReport={...payloads[0],id:'restricted-report',projectId:registered.id,attachments:[],user:{email:'forjado@example.com'}};
+    const restrictedPost=async(value,token=grant.token)=>fetch(origin+'/api/reports',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify(value)});
+    assert.equal((await restrictedPost({action:'prepare',report:restrictedReport},'')).status,403);
+    result=await restrictedPost({action:'prepare',report:restrictedReport}); const reserved=await result.json(); assert.equal(result.status,200);
+    assert.equal(rows.get(reserved.key).report.user.email,'mae@example.com');
+    assert.equal((await restrictedPost({action:'commit',key:reserved.key,receipt:reserved.receipt},'')).status,403);
+    assert.equal((await restrictedPost({action:'commit',key:reserved.key,receipt:reserved.receipt})).status,201);
+    const adminHeaders={Authorization:'Bearer admin-token','Content-Type':'application/json'};
+    for (const [index,status] of ['em-analise','em-correcao','resolvido'].entries()) {
+      const sample={...restrictedReport,id:'stage-'+index,title:['Revisar cálculo dos valores','Corrigir filtro de contratos','Atualizar mensagem de confirmação'][index],description:'Relato de teste para conferir a organização das etapas.'};
+      const prepared=await (await restrictedPost({action:'prepare',report:sample})).json();
+      assert.equal((await restrictedPost({action:'commit',key:prepared.key,receipt:prepared.receipt})).status,201);
+      assert.equal((await fetch(origin+'/api/reports/'+prepared.key,{method:'PATCH',headers:adminHeaders,body:JSON.stringify({status})})).status,200);
+    }
+    const update=async changes=>fetch(origin+'/api/reports?systems=1',{method:'PATCH',headers:adminHeaders,body:JSON.stringify({id:registered.id,name:registered.name,company:registered.company,origins:registered.origins,allowedEmails:['segunda@example.com'],...changes})});
+    assert.equal((await update({})).status,200);
+    assert.equal((await restrictedPost({action:'prepare',report:{...restrictedReport,id:'removed-account'}})).status,403);
+    assert.equal((await exchange('mae@example.com')).status,403);
+    const secondGrant=await (await exchange('segunda@example.com')).json();
+    const rotated=await (await update({rotateId:true})).json(); assert.ok(rotated.accessId); assert.notEqual(rotated.accessId,accessId);
+    assert.equal((await exchange('segunda@example.com')).status,403);
+    assert.equal((await restrictedPost({action:'prepare',report:{...restrictedReport,id:'old-ticket'}},secondGrant.token)).status,403);
+    const adminList=await (await fetch(origin+'/api/reports?systems=1',{headers:adminHeaders})).json();
+    assert.ok(!JSON.stringify(adminList).includes('access_hash')); assert.ok(!JSON.stringify(adminList).includes(rotated.accessId));
+    assert.equal((await fetch(origin+'/api/reports?systems=1',{headers:{Authorization:'Bearer viewer-token'}})).status,403);
+    // Exclusão sem permissão e falha do Storage deixam a ocorrência intacta.
+    const legacyKey=[...rows.values()].find(row=>row.report.title==='Teste do envio online' && row.project_id==='central-demo').key;
+    assert.equal((await fetch(origin+'/api/reports/'+legacyKey,{method:'DELETE'})).status,401);
+    failDelete=true;
+    assert.equal((await fetch(origin+'/api/reports/'+legacyKey,{method:'DELETE',headers:adminHeaders})).status,503);
+    assert.ok(rows.has(legacyKey)); assert.equal(files.size,2);
+    assert.equal((await fetch(origin+'/api/reports/'+legacyKey,{method:'DELETE',headers:adminHeaders})).status,200);
+    assert.equal(rows.has(legacyKey),false); assert.equal(files.size,0);
+    await page.getByRole('button',{name:'Ocorrências',exact:false}).filter({hasText:'▦ Ocorrências'}).click();
+    await page.getByRole('searchbox').fill(''); await page.getByRole('button',{name:'Atualizar'}).click();
+    await page.waitForFunction(()=>document.querySelectorAll('.occurrence').length===4);
+    await page.evaluate(()=>window.scrollTo(0,0));
+    await page.screenshot({path:path.join(__dirname,'../artifacts/central-blocos-v06.png'),fullPage:true});
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.screenshot({path:path.join(__dirname,'../artifacts/central-mobile-v06.png'),fullPage:true});
+    await page.setViewportSize({width:1440,height:1000});
+    await page.getByRole('button',{name:'Modo escuro',exact:false}).click();
+    await page.evaluate(()=>window.scrollTo(0,0));
+    await page.screenshot({path:path.join(__dirname,'../artifacts/central-escuro-v06.png'),fullPage:true});
     await page.getByRole('button',{name:'Sair',exact:true}).click(); await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor(); assert.equal(await page.locator('[data-central-bugs]').count(),0); assert.equal(await page.locator('.occurrence').count(),0);
     await page.reload(); await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor(); assert.equal(await page.locator('#workspace').isVisible(),false);
     assert.deepEqual(errors,[]);
@@ -159,6 +237,6 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await post({action:'commit',key:prepared.key,receipt:'0'.repeat(64)})).status,403);
     assert.equal((await post({action:'prepare',report:{...report,projectId:'radar-contratual'}})).status,403);
     assert.equal((await fetch(origin+'/api/reports/'+[...rows.keys()][0],{method:'PATCH',headers:{Origin:origin,'Content-Type':'application/json'},body:'{"status":"resolvido"}'})).status,401);
-    console.log('OK: login/admin, CORS por sistema, SDK oficial, upload direto de duas imagens, commit com falha/retry sem duplicata, detalhes privados, busca no texto completo, Resolver, logout e rejeição de imagem/comprovante falsos.');
+    console.log('OK: login/admin, CORS, upload/retry, detalhes/busca, quatro etapas, cadastro/edição, múltiplas contas, ID secreto/rotação, origem e conta verificadas, exclusão completa e recuperação de falha do Storage.');
   } finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); await fs.rm(output,{recursive:true,force:true}); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

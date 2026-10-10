@@ -77,7 +77,7 @@ Cada ocorrência identifica o sistema e o tipo de relato. Nos detalhes, a equipe
 
 O plugin não coleta automaticamente senhas, cookies, logs ou o conteúdo completo da página. A captura contém a região ou fonte que o usuário escolheu; ele deve revisar a imagem antes de enviar. A URL de origem inclui seus parâmetros, por isso a equipe que integra o plugin deve verificar o que o SaaS coloca nessa URL.
 
-No painel, os relatos são separados por sistema e podem ser pesquisados e filtrados. Os status disponíveis são **Novo**, **Em análise**, **Em correção** e **Resolvido**. O botão **Resolver** marca a ocorrência individual como resolvida; os detalhes permitem revisar o status. O painel também oferece modo claro e escuro.
+No painel, os relatos são separados por empresa, identificados por sistema e podem ser pesquisados e filtrados. Os quatro blocos são **Bugs novos**, **Em análise**, **Em processamento** e **Terminados**. O botão **Resolver** marca a ocorrência individual como resolvida; os detalhes permitem revisar o status. O painel também oferece modo claro e escuro.
 
 A ferramenta organiza o atendimento. A investigação, implementação da correção e comunicação com o cliente continuam sendo responsabilidade da equipe.
 
@@ -107,3 +107,8 @@ Depois que o plugin está instalado e o domínio autorizado, o usuário utiliza 
 Quem precisa consultar e gerenciar as ocorrências acessa o painel online com uma conta de administrador autorizada. Para dar esse acesso a outra pessoa da equipe, crie uma conta própria e cadastre-a como administradora conforme [DEPLOY.md](DEPLOY.md).
 
 Para entregar a integração a outro desenvolvedor ou IA, compartilhe este guia, o `README.md`, o `central-bugs.js`, o identificador do sistema e o endereço da API. Se for compartilhar o repositório privado, conceda acesso pelo GitHub. As credenciais administrativas e a chave secreta do servidor ficam fora do código distribuído.
+
+
+## Cadastro de sistemas e contas autorizadas (v0.6)
+
+A Central de Sistemas cadastra empresa, sistema e uma ou várias contas principais. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.
