@@ -348,11 +348,16 @@
       busy = true; $('fieldset').disabled = true; $('.submit').textContent = 'Enviando…'; message();
       let timeout;
       try {
+        pendingRequest = new AbortController();
+        async function accessHeaders() {
+          if (config.refreshAccess) config.token = (await config.refreshAccess(pendingRequest.signal)).token;
+          return config.token ? {Authorization:`Bearer ${config.token}`} : {};
+        }
         if (typeof config.onSubmit === 'function') await config.onSubmit({ report, files: attachments.map(item => item.file) });
         else if (config.transport === 'signed-upload') {
-          pendingRequest = new AbortController();
           async function requestJSON(value) {
-            const response = await fetch(config.endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value), signal: AbortSignal.any([pendingRequest.signal, AbortSignal.timeout(30000)]) });
+            const headers=await accessHeaders();
+            const response = await fetch(config.endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json',...headers }, body: JSON.stringify(value), signal: AbortSignal.any([pendingRequest.signal, AbortSignal.timeout(30000)]) });
             const payload = await response.json();
             if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
             return payload;
@@ -373,8 +378,8 @@
         else {
           const body = new FormData(); body.append('report', JSON.stringify(report));
           attachments.forEach(({ file }) => body.append('attachments', file, file.name));
-          pendingRequest = new AbortController(); timeout = setTimeout(() => pendingRequest?.abort(), 30000);
-          const response = await fetch(config.endpoint, { method: 'POST', body, signal: pendingRequest.signal });
+          const headers=await accessHeaders(); timeout = setTimeout(() => pendingRequest?.abort(), 30000);
+          const response = await fetch(config.endpoint, { method: 'POST', body, headers, signal: pendingRequest.signal });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
         }
         if (!destroyed) { clearDraft(); message(config.successMessage || 'Relato enviado. Obrigado por ajudar a melhorar o sistema!', true); }
@@ -427,7 +432,34 @@
       destroy() { destroyed = true; cleanup.abort(); pendingRequest?.abort(); activeStream?.getTracks().forEach(track => track.stop()); clearDraft(); dialog.close(); host.remove(); }
     };
   }
-  window.CentralBugs = { init };
+  async function connect(config = {}) {
+    if (typeof config.accessEndpoint!=='string' || !config.accessEndpoint.trim()) throw new Error('Informe o endpoint de acesso do SaaS.');
+    const endpoint=new URL(config.accessEndpoint,location.href);
+    if (endpoint.origin!==location.origin) throw new Error('O endpoint de acesso deve pertencer ao próprio SaaS.');
+    let instance;
+    async function requestAccess(signal) {
+      const headers=typeof config.accessHeaders==='function' ? await config.accessHeaders() : config.accessHeaders;
+      const response=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:headers || {},signal:AbortSignal.any([...(signal?[signal]:[]),...(config.signal?[config.signal]:[]),AbortSignal.timeout(15000)])});
+      if ([401,403,204].includes(response.status)) { instance?.destroy(); return null; }
+      if (!response.ok) throw new Error('Não foi possível autorizar o plugin. Confira a integração do sistema.');
+      const access=await response.json();
+      if (!access.projectId || !access.token || !access.user?.email || !access.endpoint) throw new Error('Configuração de acesso inválida.');
+      return access;
+    }
+    const access=await requestAccess(config.signal);
+    if (!access || config.signal?.aborted) return null;
+    instance=init({...access,position:config.position,successMessage:config.successMessage,
+      async refreshAccess(signal) {
+        const next=await requestAccess(signal);
+        if (!next || next.projectId!==access.projectId || next.user.email!==access.user.email || next.endpoint!==access.endpoint || next.transport!==access.transport) {
+          instance.destroy(); throw new Error('Sua conta mudou ou perdeu o acesso ao plugin. Entre novamente.');
+        }
+        return next;
+      }});
+    config.signal?.addEventListener('abort',()=>instance.destroy(),{once:true});
+    return instance;
+  }
+  window.CentralBugs = { init, connect };
   if (script?.dataset.projectId) {
     const start = () => { window.CentralBugs.instance = init({ projectId: script.dataset.projectId, endpoint: script.dataset.endpoint, position: script.dataset.position, transport: script.dataset.transport }); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });

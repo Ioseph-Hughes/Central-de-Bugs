@@ -1,4 +1,6 @@
-# Central de Bugs · v0.5
+# Central de Bugs · v0.6
+
+**Para integrar um sistema novo com ID e contas autorizadas, siga [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md).** Os exemplos de `init` e instalação por tag abaixo são do modo local/legado e não substituem a autenticação exigida pelos novos cadastros.
 
 Widget de feedback reutilizável, em JavaScript puro, sem instalação de pacotes ou etapa de build. A interface fica em um Shadow DOM para isolar seus estilos do SaaS.
 
@@ -19,7 +21,7 @@ O comando inicia as portas 4173 (painel/API) e 4181 (receptor compatível com o 
 - Sistemas separados na navegação e nas listas; novos `projectId` aparecem no primeiro relato.
 - Ocorrências de bug/erro, melhoria ou ajuste, com busca e filtros de tipo/status.
 - Detalhes com texto completo, imagens, links, página de origem, horário e contexto.
-- Status: novo, em análise, em correção e resolvido. O botão **Resolver** em cada ocorrência marca como resolvida diretamente na lista; a alteração fica salva e pode ser revista nos detalhes.
+- Blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os valores internos permanecem `novo`, `em-analise`, `em-correcao` e `resolvido`. O botão **Resolver** em cada ocorrência marca como resolvida diretamente na lista; a alteração fica salva e pode ser revista nos detalhes.
 - Atualização automática a cada três segundos com a aba visível e atualização manual.
 - Modo claro/escuro com preferência persistida no navegador; inicialmente segue o sistema.
 
@@ -33,7 +35,7 @@ O receptor antigo armazenava somente o último relato em memória, sem guardar o
 
 Siga [DEPLOY.md](DEPLOY.md) para instalar o SQL, criar o administrador, configurar as quatro variáveis e instalar o plugin no Radar. [`.env.example`](.env.example) contém os nomes e as duas configurações públicas do projeto informado. Nunca adicione uma chave secreta ao Git.
 
-A versão online usa login por e-mail/senha, leitura e alteração de status restritas aos administradores, tabelas com RLS e bucket privado. O widget envia arquivos diretamente por URLs assinadas do Supabase e confirma a ocorrência somente após verificar todos os anexos. Domínios permitidos e sistemas ficam em `central_projects`. O dashboard busca detalhes completos sob demanda; as imagens recebem links temporários e a lista atualiza a cada 15 segundos. A API inclui quotas persistentes de envio.
+A versão online usa login por e-mail/senha, leitura, cadastro de sistemas, alteração de status e exclusão restritos aos administradores, tabelas com RLS e bucket privado. O widget envia arquivos diretamente por URLs assinadas do Supabase e confirma a ocorrência somente após verificar todos os anexos. Domínios permitidos e sistemas ficam em `central_projects`. O dashboard busca detalhes completos sob demanda; as imagens recebem links temporários e a lista atualiza a cada 15 segundos. A API inclui quotas persistentes de envio.
 
 `npm run build` cria `dist/` com uma lista explícita de arquivos públicos. Se `SUPABASE_URL` e `SUPABASE_PUBLISHABLE_KEY` estiverem configuradas, inclui o login empacotado em `cloud.js`. O build não publica chaves secretas, `.env`, o receptor local ou `data/`. A Vercel executa `api/reports.js`, sem usar disco local para ocorrências. O SDK oficial do Supabase gerencia as sessões; o plugin distribuído continua sem dependências.
 
@@ -121,7 +123,7 @@ Sem `transport`, o modo `endpoint` faz `POST` com `multipart/form-data`:
 - `report`: string JSON com `schemaVersion`, `id`, `projectId`, `type`, `title`, `description`, `links`, `createdAt`, `context`, `attachments` e, quando fornecido, `user`.
 - `attachments`: campo repetido com cada arquivo binário, na mesma ordem dos metadados de `report.attachments`.
 
-`context` contém a URL atual (incluindo parâmetros), título da página, idioma e dimensões da janela. Revise o contexto que seu SaaS deseja compartilhar. O widget não coleta senhas, cookies, logs ou conteúdo do DOM. Os dados de usuário são somente os fornecidos na configuração.
+`context` contém a URL atual (incluindo parâmetros), título da página, idioma e dimensões da janela. Revise o contexto que seu SaaS deseja compartilhar. O widget não coleta senhas, cookies, logs ou conteúdo do DOM. No modo legado, os dados de usuário são os fornecidos na configuração. No fluxo com ID de acesso, a API registra o e-mail confirmado pelo servidor do SaaS.
 
 Uma resposta HTTP 2xx confirma o envio. Erros de rede ou HTTP mantêm o rascunho; a requisição é cancelada após 30 segundos. O `id` e o payload permanecem nas tentativas sem edição; editar um relato após uma falha cria outro `id`. O backend deve deduplicar envios pelo identificador. O modo callback deve implementar seu próprio timeout/cancelamento se necessário.
 
@@ -150,6 +152,9 @@ Os testes iniciam e encerram seus próprios servidores locais. `tests/build.cjs`
 
 - `POST /reports` ou `POST /api/reports`: recebe o multipart do widget.
 - `GET /api/reports`: lista os registros persistidos com `key`, `report`, `attachments`, `status` e datas.
+- `DELETE /api/reports/:key`: apaga a ocorrência e seus arquivos (administrador no modo online).
+- `GET/POST/PATCH /api/reports?systems=1`: consulta, cadastra e edita os sistemas (administrador).
+- `POST /api/reports?widget=access`: troca o ID de integração e a identidade confirmada pelo servidor do SaaS por autorização temporária.
 - `PATCH /api/reports/:key`: altera o status com JSON, por exemplo `{"status":"em-correcao"}`.
 - `GET /attachments/:key/:indice`: disponibiliza a imagem armazenada.
 
@@ -163,3 +168,8 @@ Para conferir o SQL em PostgreSQL embarcado, sem serviços remotos:
 npm install --prefix /tmp/central-sql-check @electric-sql/pglite
 PGLITE_PATH=/tmp/central-sql-check/node_modules/@electric-sql/pglite node tests/sql.cjs
 ```
+
+
+## Cadastro de sistemas e contas autorizadas (v0.6)
+
+A Central de Sistemas cadastra empresa, sistema e uma ou várias contas principais. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.

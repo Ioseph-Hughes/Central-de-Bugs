@@ -111,3 +111,14 @@ Reservas interrompidas ficam com `ready=false` e não aparecem no painel. Para l
 | 500 FUNCTION_INVOCATION_FAILED | Abra os logs da função no deployment atual; o código sozinho não informa a causa. |
 
 Referências: [chaves do Supabase](https://supabase.com/docs/guides/getting-started/api-keys), [armazenamento privado](https://supabase.com/docs/guides/storage/security/access-control), [URLs de upload assinadas](https://supabase.com/docs/reference/javascript/storage-from-createsigneduploadurl), [limites das funções Vercel](https://vercel.com/docs/functions/limitations) e [variáveis Vercel](https://vercel.com/docs/environment-variables/managing-environment-variables).
+
+
+## Atualizar da versão 0.5 para 0.6
+
+1. No SQL Editor do projeto Supabase da Central, execute [supabase/migrations/006-systems.sql](supabase/migrations/006-systems.sql). É uma atualização aditiva e repetível; não apaga relatos nem troca as contas administradoras.
+2. Faça o deploy da nova versão na Vercel mantendo as variáveis existentes. Nenhuma nova variável é exigida no servidor da Central.
+3. Abra **Central de Sistemas** e cadastre a empresa, o sistema e as contas permitidas. Copie o ID gerado; ele só aparece nesse momento.
+4. Configure o servidor do SaaS seguindo [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). O ID de integração fica no servidor do SaaS, nunca no frontend.
+5. Confira contas permitidas, bloqueadas, logout, envio com imagens e recebimento nos quatro blocos. As instalações antigas continuam funcionando até a migração de seu cadastro.
+
+Rollback: publicar novamente a versão anterior da Central; as novas colunas podem permanecer. Se um SaaS ainda usar o fluxo antigo e seu cadastro tiver sido ativado como restrito, volte esse registro para `restricted=false` somente como rollback consciente (a restrição volta a depender do código do SaaS). Não desative as verificações de conta para resolver erros de integração.
