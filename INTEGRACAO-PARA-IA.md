@@ -158,3 +158,16 @@ As integrações anteriores à versão 0.6 permanecem no modo antigo, controlada
 Em instalações Supabase existentes, execute `supabase/migrations/006-systems.sql` antes do deploy da Central. Em uma instalação nova, use `supabase/setup.sql`, que já inclui a estrutura completa.
 
 A ação **Apagar** remove a ocorrência e seus arquivos do armazenamento ativo da Central. **Apagar bugs antigos** permite selecionar relatos terminados recebidos antes da data escolhida, dentro do sistema selecionado (ou todos), no histórico carregado de até 1.000 ocorrências. A busca e os filtros da lista não limitam essa seleção; a empresa/sistema e a data delimitam os candidatos. A confirmação é obrigatória na interface.
+
+## Desconectar ou excluir um sistema
+
+Na **Central de Sistemas**, cada cadastro oferece **Desconectar do sistema** e **Deletar sistema**. Ambas abrem uma confirmação com **Sim** e **Não**; cancelar não altera nenhum dado.
+
+- **Desconectar do sistema** revoga o ID e as autorizações, bloqueia novos relatos e preserva o cadastro, os relatos e as imagens. O widget hospedado verifica a disponibilidade ao carregar, a cada 30 segundos com a aba visível e ao voltar para a aba, removendo o botão quando o sistema foi desconectado ou excluído. Uma aba que carregou uma versão anterior do JavaScript precisa ser recarregada. Para reconectar, configure as contas, gere um novo ID e substitua a variável correspondente no servidor do SaaS.
+- **Deletar sistema** primeiro desativa os envios, depois remove todos os relatos do sistema (incluindo rascunhos reservados), seus anexos e o cadastro. A limpeza online usa lotes e não depende dos filtros da tela nem do limite de 1.000 relatos da listagem. Em falha, a tela informa que a limpeza pode ser parcial, mantém o cadastro desativado e permite repetir a confirmação para concluir. Outros sistemas e suas ocorrências permanecem intactos. A exclusão remove os dados do armazenamento ativo; cópias, backups e arquivos já baixados não são alterados.
+
+A Central não possui acesso de escrita aos repositórios dos SaaS. **Desconectar não apaga código remoto**. Para retirar também os arquivos da integração, envie ao chat responsável pelo SaaS:
+
+> Remova a integração da Central de Bugs deste sistema. Localize o carregador de `central-bugs.js`, o componente que chama `CentralBugs.init` ou `CentralBugs.connect`, o endpoint de autorização exclusivo do plugin e suas variáveis `CENTRAL_BUGS_*`. Desmonte o widget e remova somente os arquivos, imports e observadores exclusivos dessa integração. Preserve a autenticação, os dados, os endpoints compartilhados e as outras funcionalidades do SaaS. Execute os checks do projeto e publique a remoção.
+
+Não remova automaticamente bibliotecas compartilhadas (como Supabase) nem altere contas, RLS ou dados jurídicos do SaaS.

@@ -112,3 +112,7 @@ Para entregar a integração a outro desenvolvedor ou IA, compartilhe este guia,
 ## Cadastro de sistemas e contas autorizadas (v0.6)
 
 A Central de Sistemas cadastra empresa, sistema e uma ou várias contas principais. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.
+
+## Desconectar ou deletar sistemas
+
+Na Central de Sistemas, use **Desconectar do sistema** para desativar o botão e os envios, mantendo o histórico. Use **Deletar sistema** para apagar o cadastro, todos os relatos e seus anexos. Cada ação mostra a empresa/sistema e pede confirmação com **Sim** e **Não**. A desconexão não apaga código de outro projeto; [o guia de integração](INTEGRACAO-PARA-IA.md#desconectar-ou-excluir-um-sistema) inclui instruções para o chat responsável remover a instalação do SaaS.

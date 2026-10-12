@@ -1,4 +1,4 @@
-# Central de Bugs · v0.6
+# Central de Bugs · v0.7
 
 **Para integrar um sistema novo com ID e contas autorizadas, siga [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md).** Os exemplos de `init` e instalação por tag abaixo são do modo local/legado e não substituem a autenticação exigida pelos novos cadastros.
 
@@ -18,7 +18,7 @@ Com Node.js 22, abra http://localhost:4173. O painel e o receptor local agora co
 
 O comando inicia as portas 4173 (painel/API) e 4181 (receptor compatível com o Radar). Não use o servidor Python antigo em paralelo. As duas portas atendem à mesma Central.
 
-- Sistemas separados na navegação e nas listas; novos `projectId` aparecem no primeiro relato.
+- Sistemas separados na navegação e nas listas; novos sistemas são cadastrados na Central de Sistemas antes do primeiro relato.
 - Ocorrências de bug/erro, melhoria ou ajuste, com busca e filtros de tipo/status.
 - Detalhes com texto completo, imagens, links, página de origem, horário e contexto.
 - Blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os valores internos permanecem `novo`, `em-analise`, `em-correcao` e `resolvido`. O botão **Resolver** em cada ocorrência marca como resolvida diretamente na lista; a alteração fica salva e pode ser revista nos detalhes.
@@ -170,6 +170,8 @@ PGLITE_PATH=/tmp/central-sql-check/node_modules/@electric-sql/pglite node tests/
 ```
 
 
-## Cadastro de sistemas e contas autorizadas (v0.6)
+## Cadastro de sistemas e contas autorizadas (v0.7)
 
 A Central de Sistemas cadastra empresa, sistema e uma ou várias contas principais. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.
+
+A **Central de Sistemas** também permite desconectar um sistema preservando o histórico, ou excluir seu cadastro com todos os relatos e anexos. As duas ações exigem confirmação com Sim/Não. [Guia de desconexão e remoção do código](INTEGRACAO-PARA-IA.md#desconectar-ou-excluir-um-sistema).

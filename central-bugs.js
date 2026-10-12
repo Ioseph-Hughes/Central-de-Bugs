@@ -427,10 +427,25 @@
     }
     on(window, 'resize', () => { drag = undefined; placeLauncher(); });
     placeLauncher();
-    return {
+    let availabilityTimer;
+    const instance = {
       open, close, hide, show, setPosition,
-      destroy() { destroyed = true; cleanup.abort(); pendingRequest?.abort(); activeStream?.getTracks().forEach(track => track.stop()); clearDraft(); dialog.close(); host.remove(); }
+      destroy() { destroyed = true; clearInterval(availabilityTimer); cleanup.abort(); pendingRequest?.abort(); activeStream?.getTracks().forEach(track => track.stop()); clearDraft(); dialog.close(); host.remove(); }
     };
+    if (config.endpoint && ['signed-upload','multipart'].includes(config.transport)) {
+      const availability=new URL(config.endpoint,location.href);
+      availability.searchParams.set('widget','status'); availability.searchParams.set('project',config.projectId);
+      const checkAvailability=async()=>{
+        if(destroyed || document.hidden) return;
+        try {
+          const response=await fetch(availability,{signal:AbortSignal.any([cleanup.signal,AbortSignal.timeout(10000)]),cache:'no-store'});
+          if(response.ok && (await response.json()).enabled===false) instance.destroy();
+        } catch { /* Falha de rede preserva o rascunho; o receptor continua validando cada envio. */ }
+      };
+      void checkAvailability(); availabilityTimer=setInterval(checkAvailability,30000);
+      on(document,'visibilitychange',checkAvailability);
+    }
+    return instance;
   }
   async function connect(config = {}) {
     if (typeof config.accessEndpoint!=='string' || !config.accessEndpoint.trim()) throw new Error('Informe o endpoint de acesso do SaaS.');

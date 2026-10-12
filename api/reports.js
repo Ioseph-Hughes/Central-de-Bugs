@@ -84,6 +84,12 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         json(res,200,{projectId:project.id,endpoint:centralOrigin+'/api/reports',transport:'signed-upload',user:{email:identity.email},token:registry.ticket(project,identity,secret)}); return;
       }
       const projects = checked(await client.from('central_projects').select('*'));
+      // Expõe apenas disponibilidade, inclusive após apagar o cadastro/domínio.
+      if (req.method==='GET' && url.searchParams.get('widget')==='status') {
+        if (origin) res.setHeader('Access-Control-Allow-Origin',origin);
+        const project=projects.find(item=>item.id===url.searchParams.get('project'));
+        json(res,200,{enabled:registry.enabled(project) && (!origin || project.origins.includes(origin) || project.id==='central-demo' && origin===centralOrigin)}); return;
+      }
       const allowed = origin && (origin === centralOrigin || projects.some(project => project.origins.includes(origin)));
       if (origin && !allowed) throw fail(403,'Domínio não autorizado nesta Central.');
       if (allowed) res.setHeader('Access-Control-Allow-Origin',origin);
@@ -103,10 +109,28 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         if (req.method==='PATCH') {
           const old=projects.find(project=>project.id===input.id && project.id!=='central-demo');
           if (!old) throw fail(404,'Sistema não encontrado.');
+          if (input.action==='disconnect') {
+            const saved=checked(await client.from('central_projects').update(registry.disconnect()).eq('id',old.id).select('*').single());
+            json(res,200,{project:registry.publicProject(saved)}); return;
+          }
           const changes=registry.fields(input), generated=input.rotateId===true || !old.access_hash ? registry.credential() : null;
           if (generated) {changes.access_hash=generated.access_hash;changes.connected_at=null;}
           const saved=checked(await client.from('central_projects').update(changes).eq('id',old.id).select('*').single());
           json(res,200,{project:registry.publicProject(saved),...(generated?{accessId:generated.accessId}:{})}); return;
+        }
+        if (req.method==='DELETE') {
+          const project=projects.find(item=>item.id===input.id && item.id!=='central-demo');
+          if (!project) throw fail(404,'Sistema não encontrado.');
+          // Revogar antes da limpeza; em falha, manter o cadastro para repetir a exclusão.
+          checked(await client.from('central_projects').update(registry.disconnect()).eq('id',project.id));
+          const rows=checked(await client.from('central_reports').select('key,attachments').eq('project_id',project.id).order('key').limit(100));
+          const paths=rows.flatMap(row=>row.attachments.map(file=>file.path));
+          for (let index=0;index<paths.length;index+=100) checked(await client.storage.from(bucket).remove(paths.slice(index,index+100)));
+          if (rows.length) checked(await client.from('central_reports').delete().eq('project_id',project.id).in('key',rows.map(row=>row.key)));
+          const remaining=checked(await client.from('central_reports').select('key').eq('project_id',project.id).limit(1));
+          if (remaining.length) { json(res,200,{deleted:false,removed:rows.length}); return; }
+          checked(await client.from('central_projects').delete().eq('id',project.id));
+          json(res,200,{deleted:true,removed:rows.length}); return;
         }
         throw fail(405,'Método não permitido.');
       }
