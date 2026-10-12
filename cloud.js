@@ -25,7 +25,7 @@ window.CentralCloud = {
         if (current !== generation) return;
         screen.hidden = true; app.hidden = false; logout.hidden = false;
         document.querySelector('#admin-email').textContent = session.user.email;
-        onAccess();
+        onAccess(session.user.id);
       } catch (error) { if (current === generation) alert.textContent = error.message; }
       finally { if (current === generation) button.disabled = false; }
     }
@@ -40,7 +40,9 @@ window.CentralCloud = {
     logout.onclick = async () => {
       // Limpar dados da tela imediatamente, mesmo se a rede falhar.
       generation++; onLogout(); app.hidden = true; screen.hidden = false; logout.hidden = true;
+      const stopped=window.CentralNotifications?.stop({silent:true});
       await client.auth.signOut({scope:'local'}); alert.textContent = ''; button.disabled = false;
+      await stopped;
     };
     client.auth.onAuthStateChange((event,session) => {
       if (event === 'SIGNED_OUT') { generation++; onLogout(); app.hidden = true; screen.hidden = false; logout.hidden = true; button.disabled = false; }

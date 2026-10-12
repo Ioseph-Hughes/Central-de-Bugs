@@ -177,7 +177,10 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
       }
       const staticFiles = { '/': ['index.html', 'text/html'], '/dashboard.js': ['dashboard.js', 'application/javascript'],
         '/dashboard.css': ['dashboard.css', 'text/css'], '/central-bugs.js': ['central-bugs.js', 'application/javascript'],
-        '/central-bugs-capture.js': ['central-bugs-capture.js', 'application/javascript'] };
+        '/central-bugs-capture.js': ['central-bugs-capture.js', 'application/javascript'],
+        '/notifications.js':['notifications.js','application/javascript'],'/service-worker.js':['service-worker.js','application/javascript'],
+        '/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],
+        '/icons/icon-192.png':['icons/icon-192.png','image/png'],'/icons/icon-512.png':['icons/icon-512.png','image/png'],'/icons/badge.png':['icons/badge.png','image/png'] };
       if (req.method === 'GET' && staticFiles[url.pathname]) {
         const [filename, type] = staticFiles[url.pathname];
         res.setHeader('Content-Type', `${type}; charset=utf-8`);

@@ -17,9 +17,10 @@ async function build(output = path.join(root, 'dist')) {
     .replace('<div id="workspace">', `<div id="workspace"${cloud ? ' hidden' : ''}>`)
     .replace('class="login-screen" hidden', `class="login-screen"${cloud ? '' : ' hidden'}`);
   await fs.writeFile(path.join(output, 'index.html'), html);
-  for (const filename of ['central-bugs.js', 'dashboard.js', 'dashboard.css']) {
+  for (const filename of ['central-bugs.js', 'dashboard.js', 'dashboard.css','notifications.js','service-worker.js','manifest.webmanifest']) {
     await fs.copyFile(path.join(root, filename), path.join(output, filename));
   }
+  await fs.cp(path.join(root,'icons'),path.join(output,'icons'),{recursive:true});
   await buildCapture(output);
   if (cloud) await esbuild.build({entryPoints:[path.join(root,'cloud.js')],outfile:path.join(output,'cloud.js'),bundle:true,minify:true,platform:'browser',target:'es2022',define:{CENTRAL_CONFIG:JSON.stringify({url,key})}});
 }

@@ -51,4 +51,14 @@ function checkTicket(req,project,secret) {
     authorizeAccount(project,claims); return claims;
   } catch { throw fail(403,'Acesso ao plugin expirado ou conta não autorizada. Entre novamente no seu sistema.'); }
 }
-module.exports={fail,hash,email,fields,credential,create,publicProject,accessInput,authorizeAccount,ticket,checkTicket,enabled,disconnect};
+async function authorizeAdmin(client,req) {
+  const token=req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
+  if (!token) throw fail(401,'Entre no painel para acessar as ocorrências.');
+  const {data,error}=await client.auth.getUser(token);
+  if (error || !data?.user) throw fail(401,'Sessão inválida. Entre novamente.');
+  const admin=await client.from('central_admins').select('user_id').eq('user_id',data.user.id).maybeSingle();
+  if (admin.error) throw fail(503,'Não foi possível conferir o acesso administrativo.');
+  if (!admin.data) throw fail(403,'Este usuário ainda não foi autorizado como administrador.');
+  return data.user;
+}
+module.exports={fail,hash,email,fields,credential,create,publicProject,accessInput,authorizeAccount,ticket,checkTicket,enabled,disconnect,authorizeAdmin};

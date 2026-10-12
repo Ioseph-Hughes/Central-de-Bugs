@@ -13,7 +13,7 @@ const { build } = require('../scripts/build.cjs');
   assert.equal(config.outputDirectory, 'dist');
   await fs.writeFile(path.join(output, 'server.cjs'), 'arquivo de um build anterior');
   await build(output);
-  const filenames = ['index.html', 'central-bugs.js', 'central-bugs-capture.js', 'dashboard.js', 'dashboard.css'];
+  const filenames = ['index.html', 'central-bugs.js', 'central-bugs-capture.js', 'dashboard.js', 'dashboard.css','notifications.js','service-worker.js','manifest.webmanifest','icons'];
   assert.deepEqual((await fs.readdir(output)).sort(), filenames.toSorted());
   assert.doesNotMatch(await fs.readFile(path.join(__dirname, '..', 'index.html'), 'utf8'), /data-central-mode="preview"/);
   const server = http.createServer(async (req, res) => {

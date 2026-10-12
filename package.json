@@ -1,6 +1,6 @@
 {
   "name": "central-de-bugs",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "Widget de feedback independente para integrar aos seus SaaS",
   "engines": {
@@ -10,7 +10,8 @@
     "build": "node scripts/build.cjs",
     "build:capture": "node scripts/build-capture.cjs",
     "start": "node server.cjs",
-    "test": "node tests/build.cjs && node tests/central.cjs && node tests/widget.cjs && node tests/mobile.cjs && node tests/cloud.cjs && node tests/registry.cjs",
+    "test": "node tests/build.cjs && node tests/central.cjs && node tests/widget.cjs && node tests/mobile.cjs && node tests/cloud.cjs && node tests/registry.cjs && node tests/notifications.cjs",
+    "test:notifications": "node tests/notifications.cjs",
     "test:mobile": "node tests/mobile.cjs",
     "test:cloud": "node tests/cloud.cjs",
     "test:build": "node tests/build.cjs",
@@ -18,11 +19,13 @@
     "test:sql": "node tests/sql.cjs"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
     "esbuild": "^0.28.2",
     "html2canvas-pro": "2.0.0",
     "playwright": "1.62.1"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.3"
+    "@supabase/supabase-js": "^2.117.3",
+    "web-push": "3.6.7"
   }
 }

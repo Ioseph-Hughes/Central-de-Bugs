@@ -44,12 +44,7 @@ function checked(result) {
 function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
   const receipt = row => createHmac('sha256',secret).update(`${row.key}:${row.digest}`).digest('hex');
   async function authorize(req) {
-    const token = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1];
-    if (!token) throw fail(401,'Entre no painel para acessar as ocorrências.');
-    const { data,error } = await client.auth.getUser(token);
-    if (error || !data?.user) throw fail(401,'Sessão inválida. Entre novamente.');
-    const admin = checked(await client.from('central_admins').select('user_id').eq('user_id',data.user.id).maybeSingle());
-    if (!admin) throw fail(403,'Este usuário ainda não foi autorizado como administrador.');
+    return registry.authorizeAdmin(client,req);
   }
   async function publicRecord(row, includeImages = true) {
     // Links expiram; gerar de novo na consulta, sem mudar o fingerprint do painel.

@@ -108,8 +108,8 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         }
       }
       const name=p==='/'?'index.html':p.slice(1);
-      if (!['index.html','dashboard.js','dashboard.css','cloud.js','central-bugs.js'].includes(name)) return json(res,404,{});
-      res.setHeader('Content-Type',name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':'text/html');
+      if (!['index.html','dashboard.js','dashboard.css','cloud.js','central-bugs.js','notifications.js','service-worker.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/badge.png'].includes(name)) return json(res,404,{});
+      res.setHeader('Content-Type',name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':name.endsWith('.png')?'image/png':name.endsWith('.webmanifest')?'application/manifest+json':'text/html; charset=utf-8');
       res.end(await fs.readFile(path.join(output,name)));
     } catch (error) { console.error(error); json(res,500,{error:error.message}); }
   });
@@ -265,6 +265,13 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await deleteSystem()).status,404);
     assert.deepEqual(await (await fetch(origin+'/api/reports?widget=status&project='+registered.id,{headers:{Origin:'https://no-longer-registered.example'}})).json(),{enabled:false});
     await page.screenshot({path:path.join(__dirname,'../artifacts/central-sistemas-v07.png'),fullPage:true});
+    await page.goto(origin+'/?notifications=1&systems=radar-contratual');
+    await page.getByRole('button',{name:'Testar o widget'}).waitFor();
+    await page.waitForFunction(()=>document.querySelector('#sync').textContent.startsWith('Atualizado'));
+    assert.equal(await page.locator('#page-title').innerText(),'Radar Contratual');
+    assert.equal(Number(await page.locator('#total').innerText()),[...rows.values()].filter(row=>row.ready && row.project_id==='radar-contratual').length);
+    await page.getByRole('button',{name:/Todos os sistemas/}).click();
+    assert.equal(new URL(page.url()).searchParams.has('systems'),false);
     await page.getByRole('button',{name:'Sair',exact:true}).click(); await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor(); assert.equal(await page.locator('[data-central-bugs]').count(),0); assert.equal(await page.locator('.occurrence').count(),0);
     await page.reload(); await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor(); assert.equal(await page.locator('#workspace').isVisible(),false);
     assert.deepEqual(errors,[]);
@@ -277,5 +284,6 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await post({action:'prepare',report:{...report,projectId:'radar-contratual'}})).status,403);
     assert.equal((await fetch(origin+'/api/reports/'+[...rows.keys()][0],{method:'PATCH',headers:{Origin:origin,'Content-Type':'application/json'},body:'{"status":"resolvido"}'})).status,401);
     console.log('OK: login/admin, CORS, upload/retry, detalhes/busca, quatro etapas, cadastro/edição, múltiplas contas, ID secreto/rotação, origem e conta verificadas, exclusão completa e recuperação de falha do Storage, cancelamento Sim/Não, desconexão, exclusão de sistema com mais de 200 registros/pendências e isolamento.');
-  } finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); await fs.rm(output,{recursive:true,force:true}); }
+  } catch(error) {const page=browser?.contexts()[0]?.pages()[0];if(page)console.error(await page.evaluate(()=>({loginHidden:document.querySelector('#login-screen')?.hidden,workspaceHidden:document.querySelector('#workspace')?.hidden,notifications:document.querySelector('#notifications-message')?.textContent})));throw error;}
+  finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); await fs.rm(output,{recursive:true,force:true}); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

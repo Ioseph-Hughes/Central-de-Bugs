@@ -1,4 +1,4 @@
-# Central de Bugs · v0.7
+# Central de Bugs · v0.8
 
 **Para integrar um sistema novo com ID e contas autorizadas, siga [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md).** Os exemplos de `init` e instalação por tag abaixo são do modo local/legado e não substituem a autenticação exigida pelos novos cadastros.
 
@@ -103,6 +103,20 @@ const feedback = CentralBugs.init({
 - Layout responsivo, dialog nativo, navegação por teclado e mensagens acessíveis.
 
 Não há `maxlength`, limite de quantidade de anexos ou limite de tamanho imposto pelo widget. Memória do navegador e limites do servidor/proxy ainda se aplicam. A captura nativa exige HTTPS ou localhost, suporte do navegador e escolha da tela/aba pelo usuário. A alternativa mobile renderiza a página localmente com escala máxima de 2 para reduzir o uso de memória; não inclui barras do navegador ou outros aplicativos. Imagens e iframes externos dependem de CORS e das permissões de origem; vídeo e alguns efeitos visuais podem diferir. Upload e colagem continuam disponíveis para prints feitos pelo sistema operacional. Uma CSP deve permitir o script complementar na mesma origem do widget; o carregador preserva o nonce da tag original.
+
+## Notificações no computador e no celular
+
+Na Central online, entre como administrador e abra **Notificações**. Escolha todos os sistemas ou apenas os desejados, clique em **Ativar neste dispositivo** e permita as notificações no navegador. A ativação é independente no computador e no celular. **Enviar notificação de teste** confere a exibição pelo aparelho; **Desativar neste dispositivo** remove a inscrição. Sair da conta também desativa o recebimento nesse navegador.
+
+Relatos confirmados com todos os anexos entram numa fila persistente. A cada minuto, o Supabase Cron chama a API da Central para enviar um resumo por dispositivo, agrupado por sistema, com a quantidade de novos relatos desde o último acesso. Confirmações repetidas não criam eventos duplicados. O resumo considera recebimentos, independentemente do status atual de correção; os indicadores de bugs pendentes continuam separados. Ao consultar a Central, a referência de leitura é atualizada nos dispositivos da mesma conta.
+
+O push contém contagens e nomes de sistemas. O clique abre a Central com os sistemas correspondentes filtrados; textos completos e anexos continuam exigindo login. Se o navegador rejeitar uma inscrição com 404/410, ela é removida. Falhas temporárias mantêm os relatos para nova tentativa após expirar uma reserva de dois minutos. Até 100 dispositivos são processados por rodada, em grupos de dez; cada administrador pode cadastrar até dez dispositivos.
+
+A Central pode ser instalada pelo botão **Instalar Central**, quando o navegador oferecer a instalação. No computador, a inicialização automática é uma escolha do usuário no menu do aplicativo em `chrome://apps` ou `edge://apps`. Ao abrir a Central, o resumo é recuperado do banco mesmo se uma mensagem push anterior tiver expirado. No Android, o recebimento pode funcionar com a página fechada. No iPhone, abra a Central adicionada à Tela de Início. Aviso flutuante, som e execução em segundo plano dependem das permissões e configurações do aparelho.
+
+O Service Worker não armazena páginas nem respostas privadas. Guarda somente uma identidade local para impedir que um push de outra conta seja exibido no mesmo navegador. A instalação online exige a [migração e o agendador](DEPLOY.md#notificações-web-push-v08). Nenhuma nova variável da Vercel é necessária: as chaves VAPID e o token do agendador são criados pela API e guardados numa tabela privada, acessível somente pelo servidor.
+
+`npm run test:notifications` verifica o SQL em PostgreSQL embarcado, a API, inscrições, filtros, criptografia/VAPID, agrupamento, recuperação de falhas, concorrência, resumo inicial, privacidade entre contas e a interface em Chromium com perfil mobile. A entrega ao serviço push e as notificações nativas são simuladas no teste automatizado; use a notificação de teste no seu aparelho para conferir o recebimento real.
 
 ## Comandos da instância
 

@@ -10,6 +10,9 @@
   const icons = { bug: '⌁', melhoria: '✧', ajuste: '↗' };
   let projects = [], editingSystem = null, systemAction = null, deleting = false, deletionRecords = [], revision = 0;
   let records = [], stats = [], selectedSystem = '', loading = false, fingerprint = '', active = !cloud, epoch = 0;
+  const urlScope=()=>{const ids=new URLSearchParams(location.search).get('systems');return ids ? new Set(ids.split(',').slice(0,100).filter(id=>/^[\w-]{1,100}$/.test(id))) : null;};
+  let notificationScope=urlScope();
+  window.addEventListener('central-notification-open',event=>{const url=new URL(location.href);url.searchParams.set('notifications','1');url.searchParams.set('systems',event.detail.join(','));history.replaceState(null,'',url);notificationScope=urlScope();selectedSystem='';switchView('reports');});
   function element(tag, text, className) {
     const node = document.createElement(tag);
     if (text !== undefined) node.textContent = text;
@@ -57,12 +60,14 @@
       if (version !== revision) { setTimeout(refresh,0); return; }
       if (cloud && search !== $('#search').value.trim()) { setTimeout(refresh,0); return; }
       projects=payload.projects || [];
+      window.CentralNotifications?.setProjects(projects);
       for (const project of projects) names[project.id] = project.name;
       const next = JSON.stringify([payload.reports,payload.stats,projects]); stats = payload.stats || [];
       if (next !== fingerprint) { records = payload.reports; fingerprint = next; render(); }
       $('#sync').textContent = `Atualizado às ${new Date().toLocaleTimeString('pt-BR')} · a cada ${cloud ? 15 : 3} s`;
       if (payload.limited) $('#sync').textContent += ` · histórico parcial: ${payload.reports.length} mais recentes`;
       showError('');
+      void window.CentralNotifications?.tick();
     } catch (error) { if (current === epoch) { showError(cloud ? error.message : 'Não foi possível atualizar. Confira se a Central está rodando e clique em Atualizar.'); $('#sync').textContent = 'Conexão indisponível'; } }
     finally { if (current === epoch) { loading = false; $('#refresh').disabled = false; } }
   }
@@ -74,16 +79,16 @@
       const title = id ? systemName(id) : 'Todos os sistemas';
       button.append(element('span', id ? title.split(/\s+/).filter(word => /[\p{L}\p{N}]/u.test(word)).slice(0, 2).map(word => word[0]).join('').toUpperCase() : '▦', 'system-icon'),
         element('span', title, 'system-name'), element('span', String(cloud ? stats.filter(item => !id || item.project_id === id).reduce((sum,item) => sum + item.total,0) : records.filter(item => !id || item.report.projectId === id).length), 'count'));
-      button.onclick = () => { selectedSystem = id; switchView('reports'); };  systems.append(button);
+      button.onclick = () => { notificationScope=null;const url=new URL(location.href);url.searchParams.delete('notifications');url.searchParams.delete('systems');history.replaceState(null,'',url);selectedSystem = id; switchView('reports'); };  systems.append(button);
     }
-    $('#page-title').textContent = selectedSystem ? systemName(selectedSystem) : 'Todos os sistemas';
-    const current = records.filter(item => !selectedSystem || item.report.projectId === selectedSystem);
+    $('#page-title').textContent = selectedSystem ? systemName(selectedSystem) : notificationScope ? [...notificationScope].map(systemName).join(' · ') : 'Todos os sistemas';
+    const current = records.filter(item => (!notificationScope || notificationScope.has(item.report.projectId)) && (!selectedSystem || item.report.projectId === selectedSystem));
     $('#total').textContent = current.length;
     $('#new-count').textContent = current.filter(item => item.status === 'novo').length;
     $('#resolved-count').textContent = current.filter(item => item.status === 'resolvido').length;
     $('#progress-count').textContent = current.filter(item => ['em-analise', 'em-correcao'].includes(item.status)).length;
     if (cloud) {
-      const counts = stats.filter(item => !selectedSystem || item.project_id === selectedSystem);
+      const counts = stats.filter(item => (!notificationScope || notificationScope.has(item.project_id)) && (!selectedSystem || item.project_id === selectedSystem));
       for (const [id,key] of [['total','total'],['new-count','new_count'],['resolved-count','resolved_count'],['progress-count','progress_count']]) $( '#' + id ).textContent = counts.reduce((sum,item) => sum + item[key],0);
     }
     const term = $('#search').value.trim().toLocaleLowerCase('pt-BR');
@@ -98,10 +103,10 @@
         element('span', preview ? 'Esta prévia ainda não recebe relatos. Os sistemas aparecerão com suas ocorrências após configurar o serviço online.' : current.length ? 'Altere a busca, o tipo ou o status para ver outros resultados.' : 'Os relatos enviados pelo plugin aparecerão aqui, separados por sistema.'));
       list.append(empty);
     }
-    const companyNames=[...new Set(ids.filter(id=>!selectedSystem || id===selectedSystem).map(companyName))];
+    const companyNames=[...new Set(ids.filter(id=>(!notificationScope || notificationScope.has(id)) && (!selectedSystem || id===selectedSystem)).map(companyName))];
     for (const company of companyNames) {
       const items=filtered.filter(item=>companyName(item.report.projectId)===company);
-      const companyProjects=ids.filter(id=>companyName(id)===company && (!selectedSystem || id===selectedSystem));
+      const companyProjects=ids.filter(id=>(!notificationScope || notificationScope.has(id)) && companyName(id)===company && (!selectedSystem || id===selectedSystem));
       if (!items.length && !companyProjects.some(id=>records.some(item=>item.report.projectId===id) || projects.find(project=>project.id===id)?.restricted)) continue;
       const section=element('section',undefined,'system-group'), heading=element('div',undefined,'group-head');
       heading.append(element('h3',company),element('span',`${items.length} ocorrência${items.length===1?'':'s'}`,'count'));
@@ -358,14 +363,15 @@
     showError('O painel foi publicado. Para receber e acompanhar relatos, falta conectar o armazenamento online e configurar o acesso.');
     return; // A prévia não inicia o widget nem faz requisições a uma API inexistente.
   }
-  function start() {
+  function start(userId) {
     active = true;
+    if(cloud)void window.CentralNotifications?.start({userId,api});
     window.feedback = CentralBugs.init({ projectId: 'central-demo', endpoint: '/api/reports', ...(cloud ? {transport:'signed-upload'} : {}), successMessage: 'Relato salvo na Central! Ele aparecerá na caixa de entrada.' });
     $('#open').onclick = () => feedback.open(); refresh();
   }
   if (cloud) {
     $('.sidebar-footer').replaceChildren(element('span','Central online'),element('small','Relatos privados · Supabase'));
-    CentralCloud.start(start,() => { active = false; loading = false; epoch++; fingerprint = ''; records = []; stats = []; projects=[]; for (const id of Object.keys(names)) if (!['central-demo','radar-contratual'].includes(id)) delete names[id]; selectedSystem = ''; $('#system-dialog').close(); $('#integration-dialog').close(); $('#delete-dialog').close(); $('#system-action-dialog').close(); systemAction=null; $('#access-id').textContent=''; $('#integration-instructions').textContent=''; deletionRecords=[]; revision++; $('#delete-before').disabled=false; $('#delete-old').disabled=false; switchView('reports'); window.feedback?.destroy(); window.feedback = undefined; $('#detail').close(); render(); showError(''); });
+    CentralCloud.start(start,() => { window.CentralNotifications?.reset();notificationScope=urlScope();active = false; loading = false; epoch++; fingerprint = ''; records = []; stats = []; projects=[]; for (const id of Object.keys(names)) if (!['central-demo','radar-contratual'].includes(id)) delete names[id]; selectedSystem = ''; $('#system-dialog').close(); $('#integration-dialog').close(); $('#delete-dialog').close(); $('#system-action-dialog').close(); systemAction=null; $('#access-id').textContent=''; $('#integration-instructions').textContent=''; deletionRecords=[]; revision++; $('#delete-before').disabled=false; $('#delete-old').disabled=false; switchView('reports'); window.feedback?.destroy(); window.feedback = undefined; $('#detail').close(); render(); showError(''); });
   } else start();
   const timer = setInterval(() => { if (!document.hidden) refresh(); }, cloud ? 15000 : 3000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

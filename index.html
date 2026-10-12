@@ -3,9 +3,11 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Central de Bugs · Ocorrências</title>
+  <meta name="theme-color" content="#27634f">
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/icon-192.png">
   <script>try{document.documentElement.dataset.theme=localStorage.getItem('central-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch{}</script>
   <link rel="stylesheet" href="/dashboard.css">
-  <script defer src="/central-bugs.js"></script><script defer src="/dashboard.js"></script>
+  <script defer src="/central-bugs.js"></script><script defer src="/notifications.js"></script><script defer src="/dashboard.js"></script>
 </head>
 <body>
   <section id="login-screen" class="login-screen" hidden aria-labelledby="login-title">
@@ -22,7 +24,8 @@
     <div class="sidebar-footer"><span class="connection-dot"></span> Central local <small>Ocorrências salvas em disco</small></div>
   </aside>
   <main>
-    <header class="topbar"><span>Workspace <span class="muted">/</span> <strong id="view-name">Ocorrências</strong><small id="admin-email" class="muted"></small></span><div class="tools"><button id="theme" class="button" aria-pressed="false">Modo escuro</button><button id="refresh" class="button">↻ Atualizar</button><button id="logout" class="button" hidden>Sair</button></div></header>
+    <header class="topbar"><span>Workspace <span class="muted">/</span> <strong id="view-name">Ocorrências</strong><small id="admin-email" class="muted"></small></span><div class="tools"><button id="install-app" class="button" hidden>Instalar Central</button><button id="notifications-button" class="button" disabled title="Abra a Central online para receber notificações">◉ Notificações</button><button id="theme" class="button" aria-pressed="false">Modo escuro</button><button id="refresh" class="button">↻ Atualizar</button><button id="logout" class="button" hidden>Sair</button></div></header>
+    <div id="notifications-summary" class="notification-summary" hidden><span id="notifications-summary-text"></span><button id="notifications-summary-open" class="button">Ver relatos</button></div>
     <div id="error" role="alert" hidden></div>
     <section id="reports-view">
     <section class="page-heading"><div><p class="section-label">ACOMPANHE. ENTENDA. RESOLVA.</p><h1 id="page-title">Todos os sistemas</h1><p class="muted">Bugs, melhorias e ajustes, com todo o contexto em um só lugar.</p></div><button id="open" class="button primary">＋ Testar o widget</button></section>
@@ -39,6 +42,7 @@
     </section>
   </main>
   <dialog id="detail" aria-labelledby="detail-title"><div class="detail-top"><span class="section-label">DETALHES DA OCORRÊNCIA</span><button id="close-detail" class="button" aria-label="Fechar detalhes">×</button></div><div id="detail-content"></div></dialog>
+  <dialog id="notifications-dialog" aria-labelledby="notifications-title"><div class="detail-top"><h2 id="notifications-title">Notificações neste dispositivo</h2><button id="notifications-close" class="button" aria-label="Fechar notificações">×</button></div><p class="muted">Receba um resumo dos novos relatos, agrupado por sistema. Ative separadamente no computador e no celular.</p><label class="notification-option"><input id="notifications-all" type="checkbox" checked> Todos os sistemas, incluindo os cadastrados depois</label><div id="notifications-systems" class="notification-options"></div><p id="notifications-message" role="status" aria-live="polite"></p><div class="system-actions"><button id="notifications-enable" class="button primary" disabled>Ativar neste dispositivo</button><button id="notifications-test" class="button" hidden>Enviar notificação de teste</button><button id="notifications-stop" class="button danger" hidden>Desativar neste dispositivo</button></div><details class="notification-install"><summary>Instalar e receber ao iniciar o computador</summary><p>Use <strong>Instalar Central</strong>, quando disponível, ou a opção de instalação do navegador. No computador, depois de instalar, abra <strong>chrome://apps</strong> ou <strong>edge://apps</strong> e ative <strong>Iniciar ao fazer login</strong> no menu da Central.</p><p>No Android, o Chrome pode receber notificações com a página fechada. No iPhone, adicione a Central à Tela de Início e ative as notificações abrindo por esse ícone. Som, aviso flutuante e recebimento em segundo plano dependem das configurações do aparelho.</p></details></dialog>
   <dialog id="system-dialog" aria-labelledby="system-dialog-title"><div class="detail-top"><h2 id="system-dialog-title">Cadastrar sistema</h2><button id="close-system" class="button" aria-label="Fechar cadastro">×</button></div>
     <form id="system-form" class="system-form"><label for="company-name">Empresa</label><input id="company-name" name="company" required maxlength="150" placeholder="Ex.: Minha empresa"><label for="system-name">Nome do sistema</label><input id="system-name" name="name" required maxlength="150" placeholder="Ex.: Radar Contratual"><label for="system-emails">Contas principais autorizadas</label><textarea id="system-emails" name="emails" required rows="4" placeholder="Um e-mail por linha"></textarea><small class="muted">Somente estas contas poderão usar o plugin. Aceita mais de uma conta.</small><label for="system-origins">Domínios do sistema (opcional)</label><textarea id="system-origins" name="origins" rows="2" placeholder="https://www.seusistema.com"></textarea><small class="muted">Um endereço por linha, sem caminho. Se deixar vazio, o primeiro domínio conectado pelo servidor será cadastrado.</small><label class="rotate-id" hidden><input id="rotate-id" type="checkbox"> Gerar novo ID e invalidar o anterior</label><p id="system-warning" class="muted" hidden>Ao ativar o cadastro de uma integração antiga, ela precisará usar o novo guia de autorização.</p><p id="system-error" role="alert"></p><button id="save-system" class="button primary" type="submit">Salvar e gerar ID</button></form>
   </dialog>

@@ -3,6 +3,7 @@
   "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "functions": { "api/reports.js": { "maxDuration": 60 } },
+  "functions": { "api/reports.js": { "maxDuration": 60 }, "api/notifications.js": { "maxDuration": 60 } },
+  "headers": [{"source":"/service-worker.js","headers":[{"key":"Cache-Control","value":"no-cache"},{"key":"Service-Worker-Allowed","value":"/"}]}],
   "rewrites": [ { "source": "/api/reports/:key", "destination": "/api/reports?key=:key" } ]
 }

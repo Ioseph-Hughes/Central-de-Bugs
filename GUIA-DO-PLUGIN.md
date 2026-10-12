@@ -57,6 +57,14 @@ A captura nativa depende de suporte do navegador, HTTPS ou localhost e autoriza�
 
 Essa alternativa é renderizada localmente com html2canvas-pro e não inclui a barra do navegador ou outros aplicativos. Conteúdo de outras origens, vídeo e alguns efeitos visuais podem não aparecer como na tela. Para esses casos, use **Adicionar imagens** com um print feito pelo celular. Se o renderizador não carregar, o rascunho permanece disponível para tentar novamente.
 
+## Receber notificações de novos relatos
+
+As notificações são ativadas pelos administradores dentro da Central. Abra **Notificações**, escolha os sistemas e clique em **Ativar neste dispositivo**. Autorize o navegador. Faça isso separadamente no celular e no computador.
+
+Você receberá resumos agrupados, como **Central de Bugs · 7 novos relatos**, com **Radar Contratual: 5 · Portal do Cliente: 2**. Tocando no aviso, a Central abre os sistemas correspondentes; o acesso às ocorrências continua protegido pelo seu login. A contagem indica relatos recebidos desde o último acesso, e é diferente da quantidade de bugs ainda pendentes de correção.
+
+Use **Enviar notificação de teste** para conferir o aviso no aparelho. **Desativar neste dispositivo** interrompe os avisos nesse navegador; sair da conta também desativa. A Central pode ser instalada pelo navegador. Para abrir ao ligar o PC, habilite a inicialização ao fazer login no menu do aplicativo instalado. No iPhone, é necessário adicionar a Central à Tela de Início. O formato do aviso e o funcionamento em segundo plano dependem das configurações do aparelho.
+
 ## Mover e recolher o botão
 
 - Arraste o botão pela alça ou pelo texto para colocá-lo onde preferir.

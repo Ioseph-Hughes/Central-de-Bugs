@@ -99,6 +99,18 @@ A lista traz resumos e até 1.000 ocorrências recentes, respeitando um orçamen
 
 Reservas interrompidas ficam com `ready=false` e não aparecem no painel. Para limpar reservas antigas, faça backup, consulte essas linhas e remova primeiro os arquivos de suas pastas no bucket pela interface/API de Storage, depois as linhas. Não remova registros de `storage.objects` diretamente por SQL. Não há limpeza automática agendada nesta versão.
 
+## Notificações Web Push (v0.8)
+
+Depois do SQL inicial, execute [a migração de notificações](supabase/migrations/20261012224258_push_notifications.sql), depois [o agendador](supabase/push-scheduler.sql) no SQL Editor do Supabase. As operações são aditivas e repetíveis; o histórico existente não gera avisos retroativos. A migração cria tabelas com RLS e acesso restrito a `service_role`, um evento por relato confirmado e as funções do servidor. O agendador habilita `pg_cron` e `pg_net` e verifica os envios pendentes a cada minuto.
+
+Publique a versão atual de `main` na Vercel mantendo as variáveis existentes. Não configure chaves VAPID no frontend. A API gera o par VAPID e um token aleatório na primeira configuração, armazenando-os em `central_push_config`, sem acesso por `anon` ou `authenticated`. O cron consulta esse token pela própria tabela e chama `/api/notifications?action=dispatch`; o comando do agendador não inclui o valor do token. Nunca exponha os dados dessa tabela nem os endpoints completos das inscrições em logs ou relatórios.
+
+Entre no painel, abra **Notificações**, escolha os sistemas e autorize no navegador. Cada dispositivo precisa de ativação própria. Use **Enviar notificação de teste** para conferir o aviso local; depois envie um relato de teste completo pelo plugin e aguarde a próxima rodada do cron com a Central fechada. Confira o aviso e a abertura da lista filtrada. No computador, instale a Central e habilite **Iniciar ao fazer login** no menu do aplicativo em `chrome://apps` ou `edge://apps` para receber um resumo ao iniciar.
+
+Para diagnóstico, confira o job `central-push-every-minute` em Supabase Cron, a conclusão do HTTP em `net._http_response` e os logs da função `/api/notifications` na Vercel. Um HTTP 401 do dispatcher indica token incorreto; um 503 indica instalação/configuração incompleta. Um envio aceito pelo serviço push não garante uma janelinha flutuante: permissões, conexão, bateria e configurações do sistema operacional determinam a apresentação e o momento do recebimento.
+
+Rollback: publicar a versão anterior da aplicação e desativar o job `central-push-every-minute` no Supabase Cron. As tabelas novas podem permanecer, sem alterar os relatos existentes.
+
 ## Se algo falhar
 
 | Mensagem | Verificar |
