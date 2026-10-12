@@ -108,6 +108,8 @@ O `token` vale 15 minutos, está vinculado ao sistema, conta e domínio e só pe
 
 Carregue `https://SUA_CENTRAL/central-bugs.js` e use **`CentralBugs.connect`**. Não inclua `data-project-id` no script: esse atributo inicia o modo antigo automaticamente.
 
+Se hospedar uma cópia do plugin no próprio SaaS, copie também `central-bugs-capture.js` para a mesma pasta de `central-bugs.js`. Ele permite a captura no Chrome Android e só é carregado ao solicitar uma imagem sem suporte nativo. O build da Central publica ambos; carregando o plugin pela URL da Central, nenhuma cópia adicional é necessária. Se houver CSP, permita os scripts dessa origem (o nonce da tag original é preservado).
+
 ```js
 // Depois de carregar o script, usando o cliente Supabase já existente no SaaS:
 const lifecycle = new AbortController();

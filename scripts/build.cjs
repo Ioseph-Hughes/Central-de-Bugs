@@ -2,6 +2,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const esbuild = require('esbuild');
+const { buildCapture } = require('./build-capture.cjs');
 const root = path.resolve(__dirname, '..');
 async function build(output = path.join(root, 'dist')) {
   await fs.rm(output, { recursive: true, force: true }); // Limpar somente a saída gerada, nunca a pasta data/.
@@ -19,6 +20,7 @@ async function build(output = path.join(root, 'dist')) {
   for (const filename of ['central-bugs.js', 'dashboard.js', 'dashboard.css']) {
     await fs.copyFile(path.join(root, filename), path.join(output, filename));
   }
+  await buildCapture(output);
   if (cloud) await esbuild.build({entryPoints:[path.join(root,'cloud.js')],outfile:path.join(output,'cloud.js'),bundle:true,minify:true,platform:'browser',target:'es2022',define:{CENTRAL_CONFIG:JSON.stringify({url,key})}});
 }
 module.exports = { build };

@@ -2,6 +2,24 @@
 (() => {
   'use strict';
   const script = document.currentScript;
+  const captureSource = new URL('central-bugs-capture.js', script?.src || location.href).href;
+  let pageCapture;
+  function loadPageCapture() {
+    if (typeof window.CentralBugsPageCapture === 'function') return Promise.resolve(window.CentralBugsPageCapture);
+    if (!pageCapture) pageCapture = new Promise((resolve, reject) => {
+      const loader = document.createElement('script'); loader.src = captureSource; loader.async = true;
+      if (script?.nonce) loader.nonce = script.nonce;
+      const finish = error => {
+        clearTimeout(timeout); loader.remove();
+        if (error) reject(error); else resolve(window.CentralBugsPageCapture);
+      };
+      const timeout = setTimeout(() => finish(new Error('page-capture-load')), 15000);
+      loader.onload = () => finish(typeof window.CentralBugsPageCapture === 'function' ? null : new Error('page-capture-load'));
+      loader.onerror = () => finish(new Error('page-capture-load'));
+      document.head.append(loader);
+    }).catch(error => { pageCapture = undefined; throw error; });
+    return pageCapture;
+  }
   const positions = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
   const imageTypes = /^image\/(png|jpeg|webp|gif|avif)$/i;
   const style = `
@@ -101,7 +119,7 @@
               <div class="row"><button type="button" class="secondary upload">＋ Adicionar imagens</button></div>
               <div class="row" style="margin-top:8px"><button type="button" class="secondary capture-area">✂ Selecionar área</button><button type="button" class="secondary capture">▣ Tela inteira</button></div>
               <input class="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" multiple hidden aria-label="Selecionar imagens">
-              <p class="muted" style="margin-top:8px">Você também pode colar um print neste formulário.</p>
+              <p class="muted capture-help" style="margin-top:8px">Você também pode colar um print neste formulário.</p>
               <div class="attachments" aria-label="Imagens anexadas"></div>
               <footer><span class="muted">Revise antes de enviar.</span><button type="submit" class="primary submit">Enviar relato ↗</button></footer>
             </fieldset>
@@ -113,6 +131,10 @@
     (document.body || document.documentElement).append(host);
     const $ = selector => root.querySelector(selector);
     const launcher = $('.launcher'), dialog = $('dialog'), form = $('form'), status = $('.status');
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      $('.capture').textContent = '▣ Capturar página';
+      $('.capture-help').textContent = 'A captura inclui a parte visível desta página. Confira a imagem antes de enviar. Você também pode adicionar um print do celular.';
+    }
     const cleanup = new AbortController();
     let type = 'bug', attachments = [], busy = false, capturing = false, destroyed = false;
     let draftId = crypto.randomUUID(), submittedDraft;
@@ -225,6 +247,7 @@
           </div>`;
         const stage = crop.querySelector('.crop-stage'), selection = crop.querySelector('.crop-selection');
         const fields = ['x', 'y', 'width', 'height'].map(name => crop.querySelector(`#cb-crop-${name}`));
+        canvas.style.width = ''; canvas.style.height = '';
         stage.style.width = `min(100%, ${canvas.width}px, ${48 * canvas.width / canvas.height}dvh)`;
         canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', 'Prévia da tela capturada para selecionar a região do erro');
         stage.prepend(canvas); root.append(crop);
@@ -285,24 +308,39 @@
 
     async function capture(area) {
       if (capturing || busy) return;
-      if (!navigator.mediaDevices?.getDisplayMedia) { message('Este navegador não oferece captura de tela. Adicione ou cole um print.'); return; }
       capturing = true; $('fieldset').disabled = true; message();
       const wasOpen = dialog.open; dialog.close(); host.style.visibility = 'hidden';
       try {
-        activeStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false, preferCurrentTab: true });
-        if (destroyed) return;
-        const video = document.createElement('video'); video.muted = true; video.srcObject = activeStream;
-        await video.play();
-        await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('capture-timeout')), 10000);
-          const finish = () => { clearTimeout(timeout); resolve(); };
-          if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(finish); else setTimeout(finish, 250);
-        });
-        if (destroyed) return;
-        const canvas = document.createElement('canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        let canvas;
+        if (navigator.mediaDevices?.getDisplayMedia) {
+          activeStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false, preferCurrentTab: true });
+          if (destroyed) return;
+          const video = document.createElement('video'); video.muted = true; video.srcObject = activeStream;
+          await video.play();
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('capture-timeout')), 10000);
+            const finish = () => { clearTimeout(timeout); resolve(); };
+            if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(finish); else setTimeout(finish, 250);
+          });
+          if (destroyed) return;
+          canvas = document.createElement('canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+          canvas.getContext('2d').drawImage(video, 0, 0);
+          activeStream.getTracks().forEach(track => track.stop()); activeStream = undefined; video.srcObject = null;
+        } else {
+          const renderPage = await loadPageCapture();
+          if (destroyed) return;
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          const view = window.visualViewport;
+          canvas = await renderPage(document.documentElement, {
+            x: view?.pageLeft ?? scrollX, y: view?.pageTop ?? scrollY,
+            width: Math.round(view?.width ?? innerWidth), height: Math.round(view?.height ?? innerHeight),
+            windowWidth: innerWidth, windowHeight: innerHeight,
+            scale: Math.min(devicePixelRatio || 1, 2), useCORS: true, logging: false,
+            ignoreElements: element => element.matches('[data-central-bugs], [data-central-bugs-private], input[type="password"]')
+          });
+          if (destroyed) return;
+        }
         if (!canvas.width || !canvas.height) throw new Error('empty-frame');
-        canvas.getContext('2d').drawImage(video, 0, 0);
-        activeStream.getTracks().forEach(track => track.stop()); activeStream = undefined; video.srcObject = null;
         let image = canvas;
         if (area) {
           host.style.visibility = '';
@@ -315,7 +353,7 @@
         if (!blob) throw new Error('empty-blob');
         addFiles([new File([blob], `${area ? 'recorte' : 'captura'}-${Date.now()}.png`, { type: 'image/png' })]);
       } catch (error) {
-        if (!destroyed) message(error.name === 'NotAllowedError' ? 'Captura cancelada. Você pode tentar novamente ou anexar um print.' : 'Não foi possível capturar a tela. Adicione ou cole um print.');
+        if (!destroyed) message(error.name === 'NotAllowedError' ? 'Captura cancelada. Você pode tentar novamente ou anexar um print.' : 'Não foi possível capturar a tela. Tente novamente ou adicione um print do celular.');
       } finally {
         activeStream?.getTracks().forEach(track => track.stop()); activeStream = undefined;
         capturing = false; $('fieldset').disabled = false; host.style.visibility = '';

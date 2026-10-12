@@ -34,13 +34,13 @@ Fechar o formulário ou cancelar uma captura mantém o rascunho e os anexos enqu
 
 ## Capturar somente o erro ou a tela inteira
 
-As opções **Selecionar área** e **Tela inteira** ficam lado a lado no formulário.
+As opções **Selecionar área** e **Tela inteira** ficam lado a lado no formulário. No celular e em outros navegadores sem captura nativa, a segunda opção se chama **Capturar página**.
 
 ### Selecionar área
 
 1. Clique em **Selecionar área**.
-2. No seletor do navegador, escolha a tela, janela ou aba onde o erro aparece e autorize a captura.
-3. Na prévia, arraste do início ao fim da região desejada. Você pode desenhar outra seleção para refazer o recorte.
+2. No computador, escolha a tela, janela ou aba no seletor do navegador e autorize. No Chrome Android, o plugin captura diretamente a parte visível da página aberta.
+3. Na prévia, arraste com o mouse ou o dedo do início ao fim da região desejada. Você pode desenhar outra seleção para refazer o recorte.
 4. Confira o retângulo e clique em **Anexar recorte**.
 
 Somente os pixels dentro da seleção viram o arquivo PNG anexado. A imagem completa permanece temporariamente no navegador para permitir o recorte e não é enviada como anexo desse modo. O compartilhamento da tela termina assim que a imagem é capturada, antes de você escolher a região.
@@ -53,7 +53,9 @@ Clique em **Tela inteira**, escolha a fonte no seletor do navegador e autorize. 
 
 O formulário de feedback fica escondido durante a captura. Nada é enviado à Central até você clicar em **Enviar relato**.
 
-A captura depende de suporte do navegador, HTTPS ou localhost e autorização a cada uso. Em navegadores sem esse recurso, use **Adicionar imagens** ou cole um print feito pelo sistema operacional. Essa exigência vem da [API de captura do navegador](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia).
+A captura nativa depende de suporte do navegador, HTTPS ou localhost e autorização a cada uso. No Chrome Android, que não oferece essa API, **Capturar página** cria um PNG da área visível do SaaS na posição atual de rolagem. O formulário do plugin e campos de senha são excluídos; o sistema também pode excluir uma região usando `data-central-bugs-private`.
+
+Essa alternativa é renderizada localmente com html2canvas-pro e não inclui a barra do navegador ou outros aplicativos. Conteúdo de outras origens, vídeo e alguns efeitos visuais podem não aparecer como na tela. Para esses casos, use **Adicionar imagens** com um print feito pelo celular. Se o renderizador não carregar, o rascunho permanece disponível para tentar novamente.
 
 ## Mover e recolher o botão
 
@@ -75,7 +77,7 @@ Cada ocorrência identifica o sistema e o tipo de relato. Nos detalhes, a equipe
 - URL e título da página de origem, idioma e dimensões da janela.
 - Dados de identificação do usuário, quando o SaaS os fornece na integração.
 
-O plugin não coleta automaticamente senhas, cookies, logs ou o conteúdo completo da página. A captura contém a região ou fonte que o usuário escolheu; ele deve revisar a imagem antes de enviar. A URL de origem inclui seus parâmetros, por isso a equipe que integra o plugin deve verificar o que o SaaS coloca nessa URL.
+O plugin não envia senhas, cookies, logs ou HTML da página. A captura mobile lê o DOM localmente após a ação do usuário e gera apenas o PNG da área visível ou do recorte; ele deve revisar a imagem antes de enviar. A URL de origem inclui seus parâmetros, por isso a equipe que integra o plugin deve verificar o que o SaaS coloca nessa URL.
 
 No painel, os relatos são separados por empresa, identificados por sistema e podem ser pesquisados e filtrados. Os quatro blocos são **Bugs novos**, **Em análise**, **Em processamento** e **Terminados**. O botão **Resolver** marca a ocorrência individual como resolvida; os detalhes permitem revisar o status. O painel também oferece modo claro e escuro.
 

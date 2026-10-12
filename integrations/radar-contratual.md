@@ -8,7 +8,7 @@ checkout principal, o banco e a autenticação permanecem preservados.
 
 ## Instalação preparada
 
-Copie o `central-bugs.js` deste repositório para `public/central-bugs.js` no Radar.
+Copie `central-bugs.js` e `central-bugs-capture.js` deste repositório para a pasta `public/` no Radar. O segundo arquivo permite capturar a página no Chrome Android e é carregado somente quando necessário.
 Em `app/layout.tsx`, depois de `{children}`, adicione:
 
 ```tsx
@@ -25,7 +25,7 @@ Esse layout já importa `Script` de `next/script`. A integração acompanha a
 navegação do App Router e mantém uma única instância do widget.
 
 O diff de instalação está em [radar-contratual.patch](radar-contratual.patch).
-Ele modifica somente o layout; o arquivo do widget é copiado separadamente.
+Ele modifica somente o layout; os dois arquivos do widget são copiados separadamente.
 
 ## Resultado verificado em 09/10/2026
 

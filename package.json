@@ -8,8 +8,10 @@
   },
   "scripts": {
     "build": "node scripts/build.cjs",
+    "build:capture": "node scripts/build-capture.cjs",
     "start": "node server.cjs",
-    "test": "node tests/build.cjs && node tests/central.cjs && node tests/widget.cjs && node tests/cloud.cjs && node tests/registry.cjs",
+    "test": "node tests/build.cjs && node tests/central.cjs && node tests/widget.cjs && node tests/mobile.cjs && node tests/cloud.cjs && node tests/registry.cjs",
+    "test:mobile": "node tests/mobile.cjs",
     "test:cloud": "node tests/cloud.cjs",
     "test:build": "node tests/build.cjs",
     "test:receiver": "node tests/central.cjs",
@@ -17,6 +19,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
+    "html2canvas-pro": "2.0.0",
     "playwright": "1.62.1"
   },
   "dependencies": {

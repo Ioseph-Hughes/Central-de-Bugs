@@ -2,7 +2,7 @@
 
 **Para integrar um sistema novo com ID e contas autorizadas, siga [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md).** Os exemplos de `init` e instalação por tag abaixo são do modo local/legado e não substituem a autenticação exigida pelos novos cadastros.
 
-Widget de feedback reutilizável, em JavaScript puro, sem instalação de pacotes ou etapa de build. A interface fica em um Shadow DOM para isolar seus estilos do SaaS.
+Widget de feedback reutilizável, sem instalação de pacotes ou etapa de build no SaaS. A interface fica em um Shadow DOM para isolar seus estilos. A captura mobile usa um renderizador local carregado somente quando solicitado.
 
 Para entender o propósito, o fluxo de uso e como compartilhar a integração, leia [GUIA-DO-PLUGIN.md](GUIA-DO-PLUGIN.md).
 
@@ -47,7 +47,7 @@ Se aparecer **500 FUNCTION_INVOCATION_FAILED**, abra os logs da função no depl
 
 ## Instalar em um SaaS
 
-Copie `central-bugs.js` para os arquivos públicos do seu frontend e adicione uma única tag HTML. O botão aparece automaticamente:
+Copie `central-bugs.js` e `central-bugs-capture.js` para a mesma pasta pública do seu frontend e adicione uma única tag HTML. O segundo arquivo contém html2canvas-pro (MIT), já empacotado, e só é carregado em navegadores sem captura nativa. Quando o script vem da Central, o arquivo complementar é buscado na própria Central. O botão aparece automaticamente:
 
 ```html
 <script defer
@@ -96,12 +96,13 @@ const feedback = CentralBugs.init({
 - Bug, melhoria ou ajuste; título, texto livre e múltiplos links HTTP/HTTPS.
 - Múltiplas imagens PNG, JPEG, WebP, GIF e AVIF, com prévia e remoção.
 - Upload, colagem de prints e duas opções lado a lado: **Selecionar área** ou **Tela inteira**. A seleção abre uma prévia para arrastar o recorte ou ajustar suas medidas por teclado; somente o PNG recortado é anexado. Cancelar mantém o rascunho. O compartilhamento termina antes da edição.
+- No Chrome Android e em outros navegadores sem `getDisplayMedia`, **Capturar página** gera uma imagem da parte visível do SaaS, incluindo a posição de rolagem. **Selecionar área** permite recortá-la por toque. O widget, campos de senha e elementos com `data-central-bugs-private` ficam fora dessa imagem. O PNG é revisado e enviado pelo mesmo fluxo dos outros anexos.
 - Arraste o botão pela alça ou pelo próprio texto. Solte junto a uma borda (até 32 px) para recolher; solte no interior para mantê-lo expandido.
 - Recolhido, mostra somente uma seta apontando para dentro da tela. Clique para expandir ou arraste a seta até outra posição/borda, inclusive nos cantos. Também há um botão de recolher e escolha de cantos pelo menu, acessíveis por teclado.
 - Posição proporcional à janela, borda e estado recolhido persistem no navegador por projeto e se ajustam a mudanças de resolução. Texto e anexos ficam somente na memória, preservados ao fechar o formulário ou após falha no envio, e são apagados após sucesso.
 - Layout responsivo, dialog nativo, navegação por teclado e mensagens acessíveis.
 
-Não há `maxlength`, limite de quantidade de anexos ou limite de tamanho imposto pelo widget. Memória do navegador e limites do servidor/proxy ainda se aplicam. A captura nativa exige HTTPS ou localhost, suporte do navegador e escolha da tela/aba pelo usuário; upload e colagem continuam disponíveis.
+Não há `maxlength`, limite de quantidade de anexos ou limite de tamanho imposto pelo widget. Memória do navegador e limites do servidor/proxy ainda se aplicam. A captura nativa exige HTTPS ou localhost, suporte do navegador e escolha da tela/aba pelo usuário. A alternativa mobile renderiza a página localmente com escala máxima de 2 para reduzir o uso de memória; não inclui barras do navegador ou outros aplicativos. Imagens e iframes externos dependem de CORS e das permissões de origem; vídeo e alguns efeitos visuais podem diferir. Upload e colagem continuam disponíveis para prints feitos pelo sistema operacional. Uma CSP deve permitir o script complementar na mesma origem do widget; o carregador preserva o nonce da tag original.
 
 ## Comandos da instância
 
@@ -123,7 +124,7 @@ Sem `transport`, o modo `endpoint` faz `POST` com `multipart/form-data`:
 - `report`: string JSON com `schemaVersion`, `id`, `projectId`, `type`, `title`, `description`, `links`, `createdAt`, `context`, `attachments` e, quando fornecido, `user`.
 - `attachments`: campo repetido com cada arquivo binário, na mesma ordem dos metadados de `report.attachments`.
 
-`context` contém a URL atual (incluindo parâmetros), título da página, idioma e dimensões da janela. Revise o contexto que seu SaaS deseja compartilhar. O widget não coleta senhas, cookies, logs ou conteúdo do DOM. No modo legado, os dados de usuário são os fornecidos na configuração. No fluxo com ID de acesso, a API registra o e-mail confirmado pelo servidor do SaaS.
+`context` contém a URL atual (incluindo parâmetros), título da página, idioma e dimensões da janela. Revise o contexto que seu SaaS deseja compartilhar. O widget não envia senhas, cookies, logs ou HTML da página. Quando o usuário pede uma captura mobile, o DOM é lido e renderizado localmente; somente o PNG revisado é anexado. No modo legado, os dados de usuário são os fornecidos na configuração. No fluxo com ID de acesso, a API registra o e-mail confirmado pelo servidor do SaaS.
 
 Uma resposta HTTP 2xx confirma o envio. Erros de rede ou HTTP mantêm o rascunho; a requisição é cancelada após 30 segundos. O `id` e o payload permanecem nas tentativas sem edição; editar um relato após uma falha cria outro `id`. O backend deve deduplicar envios pelo identificador. O modo callback deve implementar seu próprio timeout/cancelamento se necessário.
 
@@ -145,6 +146,10 @@ npm install
 npx playwright install chromium
 npm test
 ```
+
+`npm run test:mobile` usa Chromium com perfil Pixel 7 (toque, DPR, viewport e agente Android), desativa explicitamente `getDisplayMedia` e captura o DOM de verdade, sem simular a imagem. Verifica rolagem, elemento fixo, CSS moderno, exclusão de senha/região privada, recorte por toque, cancelamento, rotação, recuperação de falha, envio e leitura de três PNGs no receptor e no painel mobile. Evidências ficam em `artifacts/mobile/`. A emulação não substitui validação em um aparelho físico.
+
+Para registrar uma ocorrência de demonstração na Central local, com as portas 4173/4180 livres, execute `node tests/mobile.cjs --record`, depois `npm start`. Esse modo mantém o relato e os três anexos em `data/`; o teste normal usa uma pasta temporária. Para regenerar o renderizador empacotado após alterar sua versão, use `npm run build:capture`; `npm run build` já gera o arquivo complementar em `dist/`.
 
 Os testes iniciam e encerram seus próprios servidores locais. `tests/build.cjs` verifica a prévia estática, seus arquivos públicos, o aviso de configuração e a ausência de envio/polling sem backend. `tests/central.cjs` verifica dois relatos enviados de outra origem ao painel, isolamento por sistema, detalhes, imagens binárias, busca, alteração de status, modo escuro, responsividade, deduplicação e recuperação após reiniciar o receptor. Nenhum teste altera a pasta real `data/`. Para usar um Chromium já instalado, informe `CHROMIUM_PATH=/caminho/do/chromium npm test`. A autorização real para captura de tela depende da interface do navegador e deve ser conferida manualmente.
 

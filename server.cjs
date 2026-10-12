@@ -176,7 +176,8 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
         res.writeHead(200, { 'Content-Type': file.type, 'Content-Security-Policy': "default-src 'none'; sandbox" }); res.end(bytes); return;
       }
       const staticFiles = { '/': ['index.html', 'text/html'], '/dashboard.js': ['dashboard.js', 'application/javascript'],
-        '/dashboard.css': ['dashboard.css', 'text/css'], '/central-bugs.js': ['central-bugs.js', 'application/javascript'] };
+        '/dashboard.css': ['dashboard.css', 'text/css'], '/central-bugs.js': ['central-bugs.js', 'application/javascript'],
+        '/central-bugs-capture.js': ['central-bugs-capture.js', 'application/javascript'] };
       if (req.method === 'GET' && staticFiles[url.pathname]) {
         const [filename, type] = staticFiles[url.pathname];
         res.setHeader('Content-Type', `${type}; charset=utf-8`);
