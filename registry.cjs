@@ -21,14 +21,16 @@ function credential() { const accessId = 'cb_' + randomBytes(32).toString('base6
 function create(input) { const {accessId,access_hash}=credential(); return {accessId,project:{id:'sys-'+randomUUID(),...fields(input),access_hash}}; }
 function publicProject(project) {
   return {id:project.id,name:project.name,company:project.company || project.name,origins:project.origins,
-    allowedEmails:project.allowed_emails || [],restricted:project.restricted === true,connectedAt:project.connected_at || null};
+    allowedEmails:project.allowed_emails || [],restricted:project.restricted === true,disconnected:!enabled(project),connectedAt:project.connected_at || null};
 }
+const enabled = project => !!project && (!project.restricted || !!project.access_hash);
+const disconnect = () => ({restricted:true,access_hash:null,connected_at:null});
 function accessInput(input) {
   if (typeof input?.accessId !== 'string' || !/^cb_[\w-]{43}$/.test(input.accessId) || !email(input.email)) throw fail(403,'ID ou conta não autorizados.');
   return {accessHash:hash(input.accessId),email:email(input.email),origin:origin(input.origin)};
 }
 function authorizeAccount(project, identity) {
-  if (!project?.restricted || !project.allowed_emails.includes(identity.email)) throw fail(403,'Esta conta não está autorizada para este sistema.');
+  if (!enabled(project) || !project.restricted || !project.allowed_emails.includes(identity.email)) throw fail(403,'Esta conta não está autorizada para este sistema.');
   if (project.origins.length && !project.origins.includes(identity.origin)) throw fail(403,'Este domínio não está cadastrado para o sistema.');
 }
 function ticket(project,identity,secret) {
@@ -36,6 +38,7 @@ function ticket(project,identity,secret) {
   return data+'.'+createHmac('sha256',secret).update(data).digest('base64url');
 }
 function checkTicket(req,project,secret) {
+  if (!enabled(project)) throw fail(403,'O plugin foi desconectado deste sistema.');
   if (!project?.restricted) return null; // Compatibilidade com instalações anteriores ao cadastro de sistemas.
   try {
     const raw=req.headers.authorization?.match(/^Bearer ([\w-]+\.[\w-]+)$/)?.[1];
@@ -48,4 +51,4 @@ function checkTicket(req,project,secret) {
     authorizeAccount(project,claims); return claims;
   } catch { throw fail(403,'Acesso ao plugin expirado ou conta não autorizada. Entre novamente no seu sistema.'); }
 }
-module.exports={fail,hash,email,fields,credential,create,publicProject,accessInput,authorizeAccount,ticket,checkTicket};
+module.exports={fail,hash,email,fields,credential,create,publicProject,accessInput,authorizeAccount,ticket,checkTicket,enabled,disconnect};

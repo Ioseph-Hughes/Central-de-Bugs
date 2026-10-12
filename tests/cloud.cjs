@@ -42,6 +42,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
           let selected=projects.filter(project=>(!url.searchParams.has('id') || url.searchParams.get('id')===`eq.${project.id}`) && (!url.searchParams.has('access_hash') || url.searchParams.get('access_hash')===`eq.${project.access_hash}`) && (!url.searchParams.has('origins') || url.searchParams.get('origins')==='eq.{}' && !project.origins.length));
           if (req.method==='POST') { const input=JSON.parse(await read(req)); projects.push(input); selected=[input]; }
           if (req.method==='PATCH') { const changes=JSON.parse(await read(req)); for (const project of selected) Object.assign(project,changes); }
+          if (req.method==='DELETE') for(const project of selected) projects.splice(projects.indexOf(project),1);
           return json(res,200,req.headers.accept?.includes('vnd.pgrst.object') ? selected[0] : selected);
         }
         if (p.endsWith('/central_admins')) return json(res,200,url.searchParams.get('user_id')==='eq.admin-user'?[{user_id:'admin-user'}]:[]);
@@ -58,7 +59,9 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         }
         if (p.endsWith('/central_reports')) {
           let selected=[...rows.values()];
-          if (url.searchParams.has('key')) selected=selected.filter(row=>`eq.${row.key}`===url.searchParams.get('key'));
+          if (url.searchParams.has('key')) { const filter=url.searchParams.get('key'); selected=selected.filter(row=>filter===`eq.${row.key}` || filter.startsWith('in.(') && filter.slice(4,-1).split(',').includes(row.key)); }
+          if (url.searchParams.has('project_id')) selected=selected.filter(row=>`eq.${row.project_id}`===url.searchParams.get('project_id'));
+          if(url.searchParams.has('limit')) selected=selected.slice(0,Number(url.searchParams.get('limit')));
           if (url.searchParams.has('ready')) selected=selected.filter(row=>`eq.${row.ready}`===url.searchParams.get('ready'));
           if (req.method==='PATCH') {
             const changes=JSON.parse(await read(req));
@@ -226,6 +229,42 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await page.getByRole('button',{name:'Modo escuro',exact:false}).click();
     await page.evaluate(()=>window.scrollTo(0,0));
     await page.screenshot({path:path.join(__dirname,'../artifacts/central-escuro-v06.png'),fullPage:true});
+    // Sistema inteiro: cancelamento, revogação, anexos de rascunhos, lotes e isolamento.
+    const deleteSystem=()=>fetch(origin+'/api/reports?systems=1',{method:'DELETE',headers:adminHeaders,body:JSON.stringify({id:registered.id})});
+    assert.equal((await fetch(origin+'/api/reports?systems=1',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:registered.id})})).status,401);
+    assert.equal((await fetch(origin+'/api/reports?systems=1',{method:'PATCH',headers:{Authorization:'Bearer viewer-token','Content-Type':'application/json'},body:JSON.stringify({id:registered.id,action:'disconnect'})})).status,403);
+    assert.equal((await fetch(origin+'/api/reports?systems=1',{method:'DELETE',headers:adminHeaders,body:JSON.stringify({id:'central-demo'})})).status,404);
+    const currentGrant=await (await exchange('segunda@example.com',rotated.accessId)).json();
+    const draft=await (await restrictedPost({action:'prepare',report:{...restrictedReport,id:'pending-system-delete',attachments:[{name:'pendente.png',type:'image/png',size:png.length}]}},currentGrant.token)).json();
+    assert.equal((await fetch(draft.uploads[0].url,{method:'PUT',headers:{'Content-Type':'image/png'},body:png})).status,200);
+    const survivorKey='f'.repeat(64); rows.set(survivorKey,{...rows.get(reserved.key),key:survivorKey,project_id:'central-demo',report:{...restrictedReport,projectId:'central-demo'},attachments:[]});
+    const survivor=JSON.stringify(rows.get(survivorKey));
+    for(let i=0;i<201;i++){const key=require('node:crypto').createHash('sha256').update('system-batch-'+i).digest('hex');rows.set(key,{...rows.get(reserved.key),key,attachments:[],ready:i%2===0});}
+    await page.getByRole('button',{name:'Central de Sistemas',exact:false}).click();
+    await page.getByRole('button',{name:'Desconectar sistema: Sistema cadastrado',exact:true}).click();
+    assert.equal(await page.locator('#system-action-dialog').isVisible(),true);
+    await page.getByRole('button',{name:'Não',exact:true}).click(); assert.ok(registered.access_hash);
+    await page.getByRole('button',{name:'Desconectar sistema: Sistema cadastrado',exact:true}).click();
+    const beforeDisconnect=rows.size; await page.getByRole('button',{name:'Sim',exact:true}).click();
+    await page.locator('#system-action-dialog').waitFor({state:'hidden'}); assert.equal(rows.size,beforeDisconnect);assert.equal(files.size,1);assert.equal(registered.access_hash,null);
+    assert.equal((await exchange('segunda@example.com',rotated.accessId)).status,403);
+    assert.equal((await restrictedPost({action:'commit',key:draft.key,receipt:draft.receipt},currentGrant.token)).status,403);
+    const status=await (await fetch(origin+'/api/reports?widget=status&project='+registered.id,{headers:{Origin:origin}})).json();assert.deepEqual(status,{enabled:false});
+    await page.evaluate(id=>{window.disabledWidget=CentralBugs.init({projectId:id,endpoint:'/api/reports',transport:'signed-upload'});},registered.id);
+    await page.waitForFunction(id=>!document.querySelector(`[data-central-bugs="${id}"]`),registered.id);
+    await page.getByRole('button',{name:'Deletar sistema: Sistema cadastrado',exact:true}).click();
+    await page.getByRole('button',{name:'Não',exact:true}).click();assert.equal(rows.size,beforeDisconnect);
+    await page.getByRole('button',{name:'Deletar sistema: Sistema cadastrado',exact:true}).click();
+    await page.screenshot({path:path.join(__dirname,'../artifacts/central-confirmar-exclusao.png'),fullPage:true});
+    failDelete=true; await page.getByRole('button',{name:'Sim',exact:true}).click();
+    await page.getByText(/A limpeza pode ter sido parcial/).waitFor();assert.ok(projects.includes(registered));assert.equal(rows.size,beforeDisconnect);assert.equal(files.size,1);
+    await page.getByRole('button',{name:'Sim',exact:true}).click();await page.locator('#system-action-dialog').waitFor({state:'hidden'});
+    assert.equal(projects.includes(registered),false);assert.equal([...rows.values()].some(row=>row.project_id===registered.id),false);assert.equal(files.size,0);assert.equal(JSON.stringify(rows.get(survivorKey)),survivor);
+    assert.equal(await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado',exact:true}).count(),0);
+    assert.equal(await page.getByRole('button',{name:/Sistema cadastrado/}).count(),0);
+    assert.equal((await deleteSystem()).status,404);
+    assert.deepEqual(await (await fetch(origin+'/api/reports?widget=status&project='+registered.id,{headers:{Origin:'https://no-longer-registered.example'}})).json(),{enabled:false});
+    await page.screenshot({path:path.join(__dirname,'../artifacts/central-sistemas-v07.png'),fullPage:true});
     await page.getByRole('button',{name:'Sair',exact:true}).click(); await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor(); assert.equal(await page.locator('[data-central-bugs]').count(),0); assert.equal(await page.locator('.occurrence').count(),0);
     await page.reload(); await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor(); assert.equal(await page.locator('#workspace').isVisible(),false);
     assert.deepEqual(errors,[]);
@@ -237,6 +276,6 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await post({action:'commit',key:prepared.key,receipt:'0'.repeat(64)})).status,403);
     assert.equal((await post({action:'prepare',report:{...report,projectId:'radar-contratual'}})).status,403);
     assert.equal((await fetch(origin+'/api/reports/'+[...rows.keys()][0],{method:'PATCH',headers:{Origin:origin,'Content-Type':'application/json'},body:'{"status":"resolvido"}'})).status,401);
-    console.log('OK: login/admin, CORS, upload/retry, detalhes/busca, quatro etapas, cadastro/edição, múltiplas contas, ID secreto/rotação, origem e conta verificadas, exclusão completa e recuperação de falha do Storage.');
+    console.log('OK: login/admin, CORS, upload/retry, detalhes/busca, quatro etapas, cadastro/edição, múltiplas contas, ID secreto/rotação, origem e conta verificadas, exclusão completa e recuperação de falha do Storage, cancelamento Sim/Não, desconexão, exclusão de sistema com mais de 200 registros/pendências e isolamento.');
   } finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); await fs.rm(output,{recursive:true,force:true}); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

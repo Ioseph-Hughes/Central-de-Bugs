@@ -8,7 +8,7 @@
   const types = { bug: 'Bug / erro', melhoria: 'Melhoria', ajuste: 'Ajuste' };
   const states = { novo: 'Bugs novos', 'em-analise': 'Em análise', 'em-correcao': 'Em processamento', resolvido: 'Terminados' };
   const icons = { bug: '⌁', melhoria: '✧', ajuste: '↗' };
-  let projects = [], editingSystem = null, deleting = false, deletionRecords = [], revision = 0;
+  let projects = [], editingSystem = null, systemAction = null, deleting = false, deletionRecords = [], revision = 0;
   let records = [], stats = [], selectedSystem = '', loading = false, fingerprint = '', active = !cloud, epoch = 0;
   function element(tag, text, className) {
     const node = document.createElement(tag);
@@ -67,7 +67,7 @@
     finally { if (current === epoch) { loading = false; $('#refresh').disabled = false; } }
   }
   function render() {
-    const ids = [...new Set([...Object.keys(names), ...records.map(item => item.report.projectId)])];
+    const ids = [...new Set([...(preview?Object.keys(names):projects.map(project=>project.id)), ...records.map(item => item.report.projectId)])];
     const systems = $('#systems'); systems.replaceChildren();
     for (const id of ['', ...ids]) {
       const button = element('button', undefined, 'system-button'); button.setAttribute('aria-current', String(id === selectedSystem));
@@ -210,7 +210,7 @@
     if (!registered.length) list.append(element('div','Cadastre seu primeiro sistema para gerar um ID de integração.','empty'));
     for (const project of registered) {
       const card=element('article',undefined,'registry-card'), heading=element('div',undefined,'group-head');
-      heading.append(element('h2',project.name),element('span',project.restricted ? project.connectedAt ? 'Conectado' : 'Aguardando integração' : 'Integração anterior','badge'));
+      heading.append(element('h2',project.name),element('span',project.disconnected ? 'Desconectado' : project.restricted ? project.connectedAt ? 'Conectado' : 'Aguardando integração' : 'Integração anterior','badge'));
       card.append(heading,element('p',project.company || project.name,'muted'));
       const accounts=element('ul',undefined,'authorized-accounts');
       for (const account of project.allowedEmails || []) accounts.append(element('li',account));
@@ -218,10 +218,55 @@
       if (!project.restricted) card.append(element('p','As contas desta instalação ainda são controladas pelo código do SaaS. Configure o cadastro para usar o novo ID.','muted'));
       card.append(element('p',project.origins.length ? project.origins.join(' · ') : 'Domínio será cadastrado na primeira conexão.','muted'));
       if (project.connectedAt) card.append(element('p',`Última autorização: ${date(project.connectedAt)}`,'muted'));
-      const edit=element('button','Editar contas e integração','button'); edit.setAttribute('aria-label',`Editar sistema: ${project.name}`); edit.onclick=()=>systemForm(project); card.append(edit); list.append(card);
+      if(project.disconnected) {
+        card.append(element('p','O plugin está desativado e os relatos foram preservados. Para reconectar, configure as contas e gere um novo ID.','muted'));
+        card.append(safeLink('https://github.com/Ioseph-Hughes/Central-de-Bugs/blob/main/INTEGRACAO-PARA-IA.md#desconectar-ou-excluir-um-sistema','Guia para remover o código do SaaS ↗'));
+      }
+      const actions=element('div',undefined,'system-actions');
+      const edit=element('button',project.disconnected?'Configurar nova conexão':'Editar contas e integração','button'); edit.setAttribute('aria-label',`Editar sistema: ${project.name}`); edit.onclick=()=>systemForm(project); edit.disabled=deleting || preview;
+      const disconnect=element('button','Desconectar do sistema','button'); disconnect.setAttribute('aria-label',`Desconectar sistema: ${project.name}`); disconnect.disabled=project.disconnected || deleting || preview; disconnect.onclick=()=>confirmSystemAction(project,'disconnect');
+      const remove=element('button','Deletar sistema','button danger'); remove.setAttribute('aria-label',`Deletar sistema: ${project.name}`); remove.disabled=deleting || preview; remove.onclick=()=>confirmSystemAction(project,'delete');
+      actions.append(edit,disconnect,remove); card.append(actions); list.append(card);
     }
-    $('#new-system').disabled=preview;
+    $('#new-system').disabled=preview || deleting;
   }
+  function confirmSystemAction(project,action) {
+    if(deleting || preview) return;
+    systemAction={project,action};
+    $('#system-action-title').textContent=action==='delete'?'Tem certeza que quer deletar o plugin deste sistema?':'Tem certeza que quer desconectar o plugin deste sistema?';
+    $('#system-action-name').textContent=`${project.company || project.name} · ${project.name}`;
+    $('#system-action-description').textContent=action==='delete'?'O cadastro e TODOS os relatos, textos, links, contexto e imagens deste sistema serão apagados definitivamente. Esta ação não pode ser desfeita.':'O botão será desativado e novos envios serão bloqueados. Os relatos e o cadastro serão preservados. A Central não apaga arquivos de outro projeto; o guia explica como remover a integração do código do SaaS.';
+    $('#system-action-message').textContent=''; $('#system-action-no').disabled=false; $('#system-action-yes').disabled=false;
+    $('#system-action-dialog').showModal(); $('#system-action-no').focus();
+  }
+  $('#system-action-no').onclick=()=>$('#system-action-dialog').close();
+  $('#system-action-dialog').addEventListener('cancel',event=>{if(deleting)event.preventDefault();});
+  $('#system-action-dialog').addEventListener('close',()=>{systemAction=null; for(const id of ['system-action-title','system-action-name','system-action-description','system-action-message']) $('#'+id).textContent='';});
+  $('#system-action-yes').onclick=async()=>{
+    if(!systemAction || deleting) return;
+    const {project,action}=systemAction,current=epoch; let removed=0;
+    deleting=true; $('#system-action-yes').disabled=true; $('#system-action-no').disabled=true; renderRegistry();
+    try {
+      let result;
+      do {
+        result=await api('/api/reports?systems=1',{method:action==='delete'?'DELETE':'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:project.id,action})});
+        if(current!==epoch) return;
+        removed+=result.removed || 0; $('#system-action-message').textContent=action==='delete'?`Apagando dados do sistema… ${removed} relato(s) removido(s).`:'Plugin desconectado.';
+      } while(action==='delete' && !result.deleted);
+      revision++; fingerprint='';
+      if(action==='delete') {
+        projects=projects.filter(item=>item.id!==project.id); records=records.filter(item=>item.report.projectId!==project.id); stats=stats.filter(item=>item.project_id!==project.id);
+        deletionRecords=deletionRecords.filter(item=>item.report.projectId!==project.id); delete names[project.id]; if(selectedSystem===project.id) selectedSystem=''; $('#detail').close();
+      } else projects=projects.map(item=>item.id===project.id?result.project:item);
+      $('#system-action-dialog').close(); render();
+      $('#sync').textContent=action==='delete'?'Sistema, relatos e anexos apagados.':'Plugin desconectado. Os relatos foram preservados.';
+    } catch(error) {
+      if(current===epoch) { $('#system-action-message').textContent=`${error.message} ${action==='delete'?'A limpeza pode ter sido parcial. O sistema fica desativado; confirme novamente para concluir.':''}`; await refresh(); }
+    } finally {
+      deleting=false;
+      if(current===epoch) { $('#system-action-yes').disabled=false; $('#system-action-no').disabled=false; renderRegistry(); }
+    }
+  };
   function systemForm(project=null) {
     editingSystem=project; const form=$('#system-form'); form.reset();
     form.elements.company.value=project?.company || project?.name || ''; form.elements.name.value=project?.name || '';
@@ -320,7 +365,7 @@
   }
   if (cloud) {
     $('.sidebar-footer').replaceChildren(element('span','Central online'),element('small','Relatos privados · Supabase'));
-    CentralCloud.start(start,() => { active = false; loading = false; epoch++; fingerprint = ''; records = []; stats = []; projects=[]; for (const id of Object.keys(names)) if (!['central-demo','radar-contratual'].includes(id)) delete names[id]; selectedSystem = ''; $('#system-dialog').close(); $('#integration-dialog').close(); $('#delete-dialog').close(); $('#access-id').textContent=''; $('#integration-instructions').textContent=''; deletionRecords=[]; revision++; $('#delete-before').disabled=false; $('#delete-old').disabled=false; switchView('reports'); window.feedback?.destroy(); window.feedback = undefined; $('#detail').close(); render(); showError(''); });
+    CentralCloud.start(start,() => { active = false; loading = false; epoch++; fingerprint = ''; records = []; stats = []; projects=[]; for (const id of Object.keys(names)) if (!['central-demo','radar-contratual'].includes(id)) delete names[id]; selectedSystem = ''; $('#system-dialog').close(); $('#integration-dialog').close(); $('#delete-dialog').close(); $('#system-action-dialog').close(); systemAction=null; $('#access-id').textContent=''; $('#integration-instructions').textContent=''; deletionRecords=[]; revision++; $('#delete-before').disabled=false; $('#delete-old').disabled=false; switchView('reports'); window.feedback?.destroy(); window.feedback = undefined; $('#detail').close(); render(); showError(''); });
   } else start();
   const timer = setInterval(() => { if (!document.hidden) refresh(); }, cloud ? 15000 : 3000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

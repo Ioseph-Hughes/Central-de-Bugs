@@ -60,7 +60,9 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     const origin = req.headers.origin;
-    if (!/^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '') || (origin && !allowedOrigins.includes(origin) && !catalog.projects.some(project=>project.origins.includes(origin)))) {
+    const url = new URL(req.url, 'http://localhost');
+    const widgetStatus=req.method==='GET' && url.pathname==='/api/reports' && url.searchParams.get('widget')==='status';
+    if (!/^((localhost|127\.0\.0\.1)(:\d+)?)$/.test(req.headers.host || '') || (!widgetStatus && origin && !allowedOrigins.includes(origin) && !catalog.projects.some(project=>project.origins.includes(origin)))) {
       json(res, 403, { error: 'Origem não autorizada nesta Central local.' }); return;
     }
     if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
@@ -69,7 +71,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     try {
-      const url = new URL(req.url, 'http://localhost');
+      if(widgetStatus) { json(res,200,{enabled:registry.enabled(catalog.projects.find(project=>project.id===url.searchParams.get('project'))) && (!origin || allowedOrigins.includes(origin) || catalog.projects.some(project=>project.id===url.searchParams.get('project') && project.origins.includes(origin)))}); return; }
       if (url.pathname==='/api/reports' && url.searchParams.get('widget')==='access' && req.method==='POST') {
         if (origin) throw registry.fail(403,'Solicite o acesso pelo servidor do seu sistema.');
         const identity=registry.accessInput(JSON.parse(await body(req)));
@@ -91,9 +93,19 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
           if (req.method==='PATCH') {
             const project=next.projects.find(project=>project.id===input.id && project.id!=='central-demo');
             if (!project) throw registry.fail(404,'Sistema não encontrado.');
+            if (input.action==='disconnect') { Object.assign(project,registry.disconnect()); await saveCatalog(next); return {project:registry.publicProject(project)}; }
             const changes=registry.fields(input), generated=input.rotateId===true || !project.access_hash ? registry.credential() : null;
             if (generated) {changes.access_hash=generated.access_hash;changes.connected_at=null;}
             Object.assign(project,changes); await saveCatalog(next); return {project:registry.publicProject(project),...(generated?{accessId:generated.accessId}:{})};
+          }
+          if(req.method==='DELETE') {
+            const project=next.projects.find(item=>item.id===input.id && item.id!=='central-demo');
+            if(!project) throw registry.fail(404,'Sistema não encontrado.');
+            Object.assign(project,registry.disconnect()); await saveCatalog(next);
+            for(const record of [...records.values()].filter(item=>item.report.projectId===input.id)) {
+              await fs.rm(path.join(dataDir,record.key),{recursive:true,force:true}); records.delete(record.key);
+            }
+            next.projects=next.projects.filter(item=>item.id!==input.id); await saveCatalog(next); return {deleted:true};
           }
           throw registry.fail(405,'Método não permitido.');
         });
@@ -107,14 +119,14 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
         const report = JSON.parse(form.get('report'));
         const files = form.getAll('attachments');
         validate(report, files);
-        const project=catalog.projects.find(project=>project.id===report.projectId);
-        if (project?.restricted) {
-          const identity=registry.checkTicket(req,project,catalog.secret);
-          if (new URL(report.context.url).origin!==origin) throw registry.fail(400,'Página de origem inválida.');
-          report.user={email:identity.email};
-        }
         const key = keyFor(report);
         const record = await write(async () => {
+          const project=catalog.projects.find(project=>project.id===report.projectId);
+          const identity=registry.checkTicket(req,project,catalog.secret);
+          if (identity) {
+            if (new URL(report.context.url).origin!==origin) throw registry.fail(400,'Página de origem inválida.');
+            report.user={email:identity.email};
+          }
           if (records.has(key)) return records.get(key); // Retry após resposta perdida não duplica.
           const temporary = await fs.mkdtemp(path.join(dataDir, '.pending-'));
           try {
