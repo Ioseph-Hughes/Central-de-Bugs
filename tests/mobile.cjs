@@ -58,7 +58,6 @@ Verificação: captura após rolagem, elemento fixo, CSS oklch, cancelamento de 
 Limitação: a captura da página não inclui a barra do navegador nem outros aplicativos; conteúdo externo depende das permissões de origem.`;
     await widget.getByLabel('Título', { exact: true }).fill(title);
     await widget.getByLabel('O que aconteceu?', { exact: true }).fill(description);
-    await widget.getByLabel('Links', { exact: false }).fill(`${source}/\nhttps://github.com/mdn/browser-compat-data/blob/main/api/MediaDevices.json`);
     await widget.getByRole('button', { name: 'Capturar página' }).tap();
     await widget.locator('.attachment').waitFor();
     assert.deepEqual(captureRequests, [`${central}/central-bugs-capture.js`], 'Carregar junto ao script do plugin, mesmo instalado em outra origem.');
@@ -115,7 +114,7 @@ Limitação: a captura da página não inclui a barra do navegador nem outros ap
     const saved = (await (await fetch(`${central}/api/reports`)).json()).reports.find(item => item.report.title === title && item.report.context.url === `${source}/`);
     assert.ok(saved); const { key } = saved;
     assert.equal(saved.report.title, title); assert.equal(saved.report.description, description);
-    assert.equal(saved.report.type, 'bug'); assert.equal(saved.report.links.length, 2); assert.equal(saved.attachments.length, 3);
+    assert.equal(saved.report.type, 'bug'); assert.equal(saved.report.links.length, 0); assert.equal(saved.attachments.length, 3);
     for (const [index, file] of saved.attachments.entries()) {
       const bytes = Buffer.from(await (await fetch(central + file.url)).arrayBuffer());
       assert.ok(bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])));

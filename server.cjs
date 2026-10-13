@@ -1,6 +1,7 @@
 // Painel e receptor local compartilham a mesma caixa de entrada em disco.
 const http = require('node:http');
 const registry = require('./registry.cjs');
+const { widgetRelease } = require('./scripts/widget-release.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -181,6 +182,11 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
         '/notifications.js':['notifications.js','application/javascript'],'/service-worker.js':['service-worker.js','application/javascript'],
         '/manifest.webmanifest':['manifest.webmanifest','application/manifest+json'],
         '/icons/icon-192.png':['icons/icon-192.png','image/png'],'/icons/icon-512.png':['icons/icon-512.png','image/png'],'/icons/badge.png':['icons/badge.png','image/png'] };
+      if(req.method==='GET' && ['/central-bugs.js','/central-bugs-version.json'].includes(url.pathname)) {
+        const widget=await widgetRelease();res.setHeader('Access-Control-Allow-Origin','*');
+        res.setHeader('Content-Type',url.pathname.endsWith('.json')?'application/json; charset=utf-8':'application/javascript; charset=utf-8');
+        res.end(url.pathname.endsWith('.json')?JSON.stringify(widget.manifest):widget.code);return;
+      }
       if (req.method === 'GET' && staticFiles[url.pathname]) {
         const [filename, type] = staticFiles[url.pathname];
         res.setHeader('Content-Type', `${type}; charset=utf-8`);

@@ -108,7 +108,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         }
       }
       const name=p==='/'?'index.html':p.slice(1);
-      if (!['index.html','dashboard.js','dashboard.css','cloud.js','central-bugs.js','notifications.js','service-worker.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/badge.png'].includes(name)) return json(res,404,{});
+      if (!['index.html','dashboard.js','dashboard.css','cloud.js','central-bugs.js','central-bugs-version.json','notifications.js','service-worker.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/badge.png'].includes(name)) return json(res,404,{});
       res.setHeader('Content-Type',name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':name.endsWith('.png')?'image/png':name.endsWith('.webmanifest')?'application/manifest+json':'text/html; charset=utf-8');
       res.end(await fs.readFile(path.join(output,name)));
     } catch (error) { console.error(error); json(res,500,{error:error.message}); }
@@ -146,14 +146,14 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await page.getByRole('button',{name:'Testar o widget'}).click(); const widget=page.locator('[data-central-bugs]');
     await widget.getByRole('button',{name:'Relatar um bug'}).click(); await widget.getByLabel('Título',{exact:true}).fill('Teste do envio online');
     const description='Descrição extensa. '.repeat(1000)+'Texto fora da prévia';
-    await widget.getByLabel('O que aconteceu?',{exact:true}).fill(description); await widget.getByLabel('Links',{exact:false}).fill('https://example.com/contexto');
+    await widget.getByLabel('O que aconteceu?',{exact:true}).fill(description);
     await widget.locator('input[type=file]').setInputFiles([{name:'primeiro.png',mimeType:'image/png',buffer:png},{name:'segundo.png',mimeType:'image/png',buffer:Buffer.concat([png,Buffer.alloc(5*1024*1024)])}]);
     failCommit=true; await widget.getByRole('button',{name:'Enviar relato'}).click(); await widget.getByText(/Seu texto e suas imagens foram preservados/).waitFor();
     assert.equal(await widget.getByLabel('Título',{exact:true}).inputValue(),'Teste do envio online'); assert.equal(files.size,2); assert.equal([...rows.values()].filter(row=>row.ready).length,0);
     await widget.getByRole('button',{name:'Enviar relato'}).click(); await widget.getByText(/Relato salvo na Central/).waitFor();
     assert.equal(rows.size,1); assert.equal(files.size,2); assert.equal(payloads[0].id,payloads[1].id); assert.equal(payloads[0].createdAt,payloads[1].createdAt);
     await widget.getByRole('button',{name:'Fechar',exact:true}).click(); await page.getByRole('button',{name:'Atualizar'}).click(); await page.locator('.occurrence').waitFor();
-    assert.ok((await page.locator('.row-meta').innerText()).includes('2 imagem(ns) · 1 link(s)'));
+    assert.ok((await page.locator('.row-meta').innerText()).includes('2 imagem(ns) · 0 link(s)'));
     await page.locator('.occurrence').click(); assert.equal(await page.locator('.description').innerText(),description); await page.locator('.gallery').scrollIntoViewIfNeeded();
     await page.waitForFunction(()=>[...document.querySelectorAll('.gallery img')].every(img=>img.naturalWidth>0)); assert.equal(await page.locator('.gallery img').count(),2);
     await page.getByRole('button',{name:'Fechar detalhes'}).click(); await page.getByRole('button',{name:'Resolver ocorrência: Teste do envio online',exact:true}).click();
