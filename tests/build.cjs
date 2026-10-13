@@ -13,7 +13,7 @@ const { build } = require('../scripts/build.cjs');
   assert.equal(config.outputDirectory, 'dist');
   await fs.writeFile(path.join(output, 'server.cjs'), 'arquivo de um build anterior');
   await build(output);
-  const filenames = ['index.html', 'central-bugs.js', 'central-bugs-capture.js', 'dashboard.js', 'dashboard.css','notifications.js','service-worker.js','manifest.webmanifest','icons'];
+  const filenames = ['index.html', 'central-bugs.js', 'central-bugs-version.json', 'central-bugs-capture.js', 'dashboard.js', 'dashboard.css','notifications.js','service-worker.js','manifest.webmanifest','icons'];
   assert.deepEqual((await fs.readdir(output)).sort(), filenames.toSorted());
   assert.doesNotMatch(await fs.readFile(path.join(__dirname, '..', 'index.html'), 'utf8'), /data-central-mode="preview"/);
   const server = http.createServer(async (req, res) => {
@@ -40,6 +40,7 @@ const { build } = require('../scripts/build.cjs');
     assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
     assert.equal(await page.locator('html').getAttribute('data-central-mode'), 'preview');
     assert.equal((await fetch(`${base}/central-bugs.js`)).status, 200);
+    const manifest=JSON.parse(await fs.readFile(path.join(output,'central-bugs-version.json'),'utf8'));assert.match(manifest.release,/^[a-f0-9]{64}$/);assert.equal(manifest.protocol,1);assert.ok((await fs.readFile(path.join(output,'central-bugs.js'),'utf8')).includes(manifest.release));
     assert.equal((await fetch(`${base}/central-bugs-capture.js`)).status, 200);
     for (const url of ['/server.cjs', '/data', '/.env', '/api/reports']) assert.equal((await fetch(base + url)).status, 404);
     await page.waitForTimeout(3100); // A prévia não inicia o polling de três segundos.

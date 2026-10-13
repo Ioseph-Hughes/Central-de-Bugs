@@ -56,11 +56,8 @@ const { chromium } = require('playwright');
     await widget.getByLabel('Título', { exact: true }).fill('Botão de salvar não responde');
     const description = 'Primeira linha\n' + 'Texto longo de exemplo. '.repeat(1000) + '<script>window.injetado = true</script>';
     await widget.getByLabel('O que aconteceu?', { exact: true }).fill(description);
-    await widget.getByLabel('Links', { exact: false }).fill('javascript:alert(1)');
-    await widget.getByRole('button', { name: 'Enviar relato' }).click();
-    await assertStatus(widget, 'Confira os links');
-    assert.equal(await page.locator('.report').count(), 0);
-    await widget.getByLabel('Links', { exact: false }).fill('https://example.com/primeiro\nhttps://example.com/segundo');
+    assert.equal(await widget.locator('[name=links]').count(),0);
+    await widget.getByRole('button',{name:'Ativar modo escuro',exact:true}).click();assert.equal(await widget.getAttribute('data-theme'),'dark');
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
     await widget.locator('input[type=file]').setInputFiles([
       { name: 'tela.png', mimeType: 'image/png', buffer: png },
@@ -78,7 +75,7 @@ const { chromium } = require('playwright');
     assert.equal(await page.locator('.report p').textContent(), description);
     assert.equal(await page.evaluate(() => window.injetado), undefined);
     assert.equal(await page.locator('.report img').count(), 1);
-    assert.equal(await page.locator('.report a').count(), 2);
+    assert.equal(await page.locator('.report a').count(), 0);
     assert.equal(await widget.locator('.attachment').count(), 0);
     await widget.getByRole('button', { name: 'Fechar', exact: true }).click();
 
@@ -90,6 +87,7 @@ const { chromium } = require('playwright');
     assert.equal(await widget.getByRole('button', { name: 'Mostrar botão de feedback', exact: true }).isVisible(), true);
     assert.equal(await widget.locator('.launch').isVisible(), false);
     await page.reload();
+    assert.equal(await widget.getAttribute('data-theme'),'dark');
     assert.equal(await widget.locator('.launcher.collapsed').isVisible(), true);
     assert.equal(await widget.locator('.launcher').getAttribute('data-edge'), 'left');
     assert.equal(await widget.locator('.restore').textContent(), '→');

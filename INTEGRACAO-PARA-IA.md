@@ -108,7 +108,7 @@ O `token` vale 15 minutos, está vinculado ao sistema, conta e domínio e só pe
 
 Carregue `https://SUA_CENTRAL/central-bugs.js` e use **`CentralBugs.connect`**. Não inclua `data-project-id` no script: esse atributo inicia o modo antigo automaticamente.
 
-Se hospedar uma cópia do plugin no próprio SaaS, copie também `central-bugs-capture.js` para a mesma pasta de `central-bugs.js`. Ele permite a captura no Chrome Android e só é carregado ao solicitar uma imagem sem suporte nativo. O build da Central publica ambos; carregando o plugin pela URL da Central, nenhuma cópia adicional é necessária. Se houver CSP, permita os scripts dessa origem (o nonce da tag original é preservado).
+**Para receber atualizações automáticas, carregue o arquivo pela URL da Central. Não copie o widget para `public/` do SaaS nem fixe sua versão com uma cópia compilada.** O carregador de captura mobile também é obtido dessa origem somente quando necessário. Se houver CSP, permita a origem da Central em `script-src` e `connect-src`; o nonce da tag original é preservado na atualização. Não use SRI com hash fixo para essa URL mutável. Uma instalação isolada/offline precisa publicar o widget, o renderizador de captura e o manifesto juntos e administrar suas próprias atualizações.
 
 ```js
 // Depois de carregar o script, usando o cliente Supabase já existente no SaaS:
@@ -173,3 +173,19 @@ A Central não possui acesso de escrita aos repositórios dos SaaS. **Desconecta
 > Remova a integração da Central de Bugs deste sistema. Localize o carregador de `central-bugs.js`, o componente que chama `CentralBugs.init` ou `CentralBugs.connect`, o endpoint de autorização exclusivo do plugin e suas variáveis `CENTRAL_BUGS_*`. Desmonte o widget e remova somente os arquivos, imports e observadores exclusivos dessa integração. Preserve a autenticação, os dados, os endpoints compartilhados e as outras funcionalidades do SaaS. Execute os checks do projeto e publique a remoção.
 
 Não remova automaticamente bibliotecas compartilhadas (como Supabase) nem altere contas, RLS ou dados jurídicos do SaaS.
+
+## Atualizações automáticas do widget
+
+A partir da versão 0.9, o widget consulta `central-bugs-version.json` a cada 60 segundos com a aba visível e ao voltar para ela. O build calcula a identidade da publicação a partir do widget e do renderizador de captura e inclui a mesma identidade no script e no manifesto. Uma alteração nesses arquivos é detectada sem depender de o desenvolvedor lembrar de incrementar um número manual.
+
+Quando encontra uma publicação compatível, o plugin carrega o script novo da mesma origem. Cada instância é substituída somente quando está ociosa: sem popup aberto, texto de rascunho (mesmo com o popup fechado), imagens, arraste, captura ou envio em andamento. Fechar um rascunho não o descarta. Ao terminar o envio e fechar o formulário, a atualização pendente pode ser aplicada. Posição, recolhimento e tema claro/escuro permanecem na preferência por sistema.
+
+As referências retornadas por `init` e `connect` continuam válidas. O SaaS pode continuar chamando `feedback.open()` e `feedback.destroy()` depois de atualizar; o `AbortController` de logout também remove a versão atual. A atualização não modifica IDs de acesso, contas, permissões, registros nem endpoints do SaaS. Uma conta desconectada ou uma instância destruída não é remontada por uma publicação que terminou de baixar depois do logout. Falha de rede/CSP mantém a instância em uso e será tentada novamente. Publicações de protocolo incompatível exigem atualização da integração.
+
+**Ativação inicial:** quem está com uma versão anterior à 0.9 já aberta precisa recarregar essa página uma vez. Depois que carregar a 0.9, passa a receber as próximas versões compatíveis sem recarregar o SaaS.
+
+**Migrar uma instalação que usa cópia local:** procure o carregador de `central-bugs.js` e altere somente sua origem para `https://central-de-bugs.vercel.app/central-bugs.js`. Preserve `CentralBugs.connect`, o endpoint de autorização, o ID secreto no servidor e o ciclo de autenticação existente. Remova a cópia local somente se nenhum carregador a estiver usando. Publique o SaaS, recarregue a página e teste uma conta permitida e outra bloqueada. Não exponha o ID no navegador nem substitua a autorização por `init`.
+
+O popup oferece um botão **Claro/Escuro** independente do tema do SaaS. O campo **Links** foi retirado dos relatos novos; a URL da página continua registrada automaticamente em `context.url`, e os links de relatos antigos permanecem nos detalhes.
+
+Para a instalação existente do Kimb que usa uma cópia local, há um [prompt pronto para a IA responsável](ATUALIZAR-KIMB.md). Ele altera o carregador sem recriar o cadastro nem expor credenciais.

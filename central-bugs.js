@@ -2,16 +2,17 @@
 (() => {
   'use strict';
   const script = document.currentScript;
+  const release = '__CENTRAL_BUGS_RELEASE__';
   const captureSource = new URL('central-bugs-capture.js', script?.src || location.href).href;
   let pageCapture;
   function loadPageCapture() {
-    if (typeof window.CentralBugsPageCapture === 'function') return Promise.resolve(window.CentralBugsPageCapture);
+    if (typeof window.CentralBugsPageCapture === 'function' && window.CentralBugsPageCaptureRelease===release) return Promise.resolve(window.CentralBugsPageCapture);
     if (!pageCapture) pageCapture = new Promise((resolve, reject) => {
       const loader = document.createElement('script'); loader.src = captureSource; loader.async = true;
       if (script?.nonce) loader.nonce = script.nonce;
       const finish = error => {
         clearTimeout(timeout); loader.remove();
-        if (error) reject(error); else resolve(window.CentralBugsPageCapture);
+        if (error) reject(error); else { window.CentralBugsPageCaptureRelease=release; resolve(window.CentralBugsPageCapture); }
       };
       const timeout = setTimeout(() => finish(new Error('page-capture-load')), 15000);
       loader.onload = () => finish(typeof window.CentralBugsPageCapture === 'function' ? null : new Error('page-capture-load'));
@@ -51,7 +52,7 @@
     .choice:hover { border-color: #55745d; background: #f4f6ee; } .choice strong { display: block; }
     .badge { background: #f8ece6; color: #a74931; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; }
     label { display: block; font-weight: 600; margin: 18px 0 6px; } input, textarea, select { width: 100%; background: white; color: #202624; border: 1px solid #d9dfd5; border-radius: 9px; padding: 11px; }
-    textarea { resize: vertical; min-height: 120px; } .links { min-height: 66px; }
+    textarea { resize: vertical; min-height: 120px; }
     .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .row label { margin: 0; }
     .secondary { border: 1px solid #d9dfd5; border-radius: 9px; padding: 9px 12px; color: #344d3d; background: white; }
     .primary { background: #2f4b3a; color: white; border: 0; padding: 12px 18px; border-radius: 10px; font-weight: 650; }
@@ -70,10 +71,23 @@
     .crop-selection { position: absolute; border: 2px solid #fff; outline: 1px solid #253a32; box-shadow: 0 0 0 2000px #14251e88; pointer-events: none; }
     .crop-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
     .crop-fields label { font-size: 12px; } .crop-fields input { padding: 8px; }
+    .header-actions { display: flex; gap: 8px; align-items: center; } .theme { font-size: 12px; white-space: nowrap; padding: 6px 9px; min-height: 34px; }
+    :host([data-theme="dark"]) { color: #e5ebe7; color-scheme: dark; }
+    :host([data-theme="dark"]) dialog { background: #111c18; border-color: #35463d; }
+    :host([data-theme="dark"]) :is(.choice,input,textarea,select,.secondary,.icon) { background: #1c2a23; color: #e5ebe7; border-color: #40534a; }
+    :host([data-theme="dark"]) .choice:hover { background: #263d30; border-color: #94c7a6; }
+    :host([data-theme="dark"]) :is(.muted,summary,.back) { color: #bbcfc3; }
+    :host([data-theme="dark"]) .eyebrow { color: #9ec9ab; }
+    :host([data-theme="dark"]) .badge { background: #473428; color: #ffc3ab; }
+    :host([data-theme="dark"]) .attachment { background: #1b2c22; }
+    :host([data-theme="dark"]) :is(.attachment button,.status) { color: #ffb3a3; }
+    :host([data-theme="dark"]) .status.success { color: #a8e1b4; }
+    :host([data-theme="dark"]) .primary { background: #85c4a2; color: #10241a; }
+    :host([data-theme="dark"]) :is(footer,details) { border-color: #40534a; }
     @media(max-width: 480px) { header { padding: 22px 20px 12px; } .body { padding: 0 20px 20px; } .launcher button { padding: 8px; } }
   `;
 
-  function init(config = {}) {
+  function createWidget(config = {}, hooks = {}) {
     if (typeof config.projectId !== 'string' || !config.projectId.trim()) throw new Error('Informe projectId para identificar o SaaS.');
     if (config.endpoint) {
       const url = new URL(config.endpoint, location.href);
@@ -81,17 +95,21 @@
     }
     const storageKey = `central-bugs:${config.projectId}:preferences`;
     const initialPosition = positions.includes(config.position) ? config.position : 'bottom-right';
-    let preferences = { position: initialPosition, hidden: false, edge: initialPosition.endsWith('right') ? 'right' : 'left', x: initialPosition.endsWith('right') ? 1 : 0, y: initialPosition.startsWith('bottom') ? 1 : 0 };
+    let preferences = { position: initialPosition, hidden: false, edge: initialPosition.endsWith('right') ? 'right' : 'left', x: initialPosition.endsWith('right') ? 1 : 0, y: initialPosition.startsWith('bottom') ? 1 : 0, theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light' };
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey));
       if (saved && positions.includes(saved.position)) preferences = {
         position: saved.position, hidden: saved.hidden === true,
         edge: ['left', 'right', 'top', 'bottom'].includes(saved.edge) ? saved.edge : saved.position.endsWith('right') ? 'right' : 'left',
         x: Number.isFinite(saved.x) ? Math.max(0, Math.min(1, saved.x)) : saved.position.endsWith('right') ? 1 : 0,
-        y: Number.isFinite(saved.y) ? Math.max(0, Math.min(1, saved.y)) : saved.position.startsWith('bottom') ? 1 : 0
+        y: Number.isFinite(saved.y) ? Math.max(0, Math.min(1, saved.y)) : saved.position.startsWith('bottom') ? 1 : 0,
+        theme: ['light','dark'].includes(saved.theme) ? saved.theme : preferences.theme
       };
     } catch { /* Preferências são opcionais em navegadores com armazenamento bloqueado. */ }
     const host = document.createElement('div');
+    const cleanup = new AbortController();
+    let availabilityTimer;
+    try {
     host.setAttribute('data-central-bugs', config.projectId);
     const root = host.attachShadow({ mode: 'open' });
     root.innerHTML = `<style>${style}</style>
@@ -102,7 +120,7 @@
         <button class="restore" aria-label="Mostrar botão de feedback" title="Clique para expandir; arraste para mover">←</button>
       </div>
       <dialog aria-labelledby="cb-title" aria-describedby="cb-description">
-        <header><div><p class="eyebrow">Central de Bugs</p><h2 id="cb-title">Seu feedback faz diferença.</h2><p class="muted" id="cb-description">Conte o que aconteceu ou o que podemos melhorar.</p></div><button class="icon close" aria-label="Fechar">×</button></header>
+        <header><div><p class="eyebrow">Central de Bugs</p><h2 id="cb-title">Seu feedback faz diferença.</h2><p class="muted" id="cb-description">Conte o que aconteceu ou o que podemos melhorar.</p></div><div class="header-actions"><button type="button" class="secondary theme"></button><button class="icon close" aria-label="Fechar">×</button></div></header>
         <div class="body">
           <div class="choices">
             <button class="choice" data-type="bug"><span class="badge">⌁</span><span><strong>Relatar um bug</strong><span class="muted">Algo não funcionou como esperado.</span></span><span>›</span></button>
@@ -114,7 +132,6 @@
               <button type="button" class="back">← Alterar tipo de relato</button>
               <label for="cb-summary">Título</label><input id="cb-summary" name="title" placeholder="Resuma o que você quer nos contar" required>
               <label for="cb-text">O que aconteceu?</label><textarea id="cb-text" name="description" placeholder="Descreva o problema, o que você esperava ou sua ideia…" required></textarea>
-              <label for="cb-links">Links <span class="muted">· opcional</span></label><textarea id="cb-links" name="links" class="links" placeholder="Um link por linha"></textarea>
               <label>Imagens <span class="muted">· opcional</span></label>
               <div class="row"><button type="button" class="secondary upload">＋ Adicionar imagens</button></div>
               <div class="row" style="margin-top:8px"><button type="button" class="secondary capture-area">✂ Selecionar área</button><button type="button" class="secondary capture">▣ Tela inteira</button></div>
@@ -135,13 +152,19 @@
       $('.capture').textContent = '▣ Capturar página';
       $('.capture-help').textContent = 'A captura inclui a parte visível desta página. Confira a imagem antes de enviar. Você também pode adicionar um print do celular.';
     }
-    const cleanup = new AbortController();
     let type = 'bug', attachments = [], busy = false, capturing = false, destroyed = false;
     let draftId = crypto.randomUUID(), submittedDraft;
     let activeStream, pendingRequest, returnFocus;
 
     function message(text = '', success = false) { status.textContent = text; status.classList.toggle('success', success); }
     function savePreferences() { try { localStorage.setItem(storageKey, JSON.stringify(preferences)); } catch { /* Opcional. */ } }
+    function applyTheme() {
+      host.dataset.theme=preferences.theme;
+      $('.theme').textContent=preferences.theme==='dark'?'☀ Claro':'☾ Escuro';
+      $('.theme').setAttribute('aria-label',preferences.theme==='dark'?'Ativar modo claro':'Ativar modo escuro');
+      $('.theme').setAttribute('aria-pressed',String(preferences.theme==='dark'));
+    }
+    applyTheme();
     const clamp = value => Math.max(0, Math.min(1, value));
     const viewport = () => ({ width: document.documentElement.clientWidth, height: document.documentElement.clientHeight });
     function placeLauncher() {
@@ -184,6 +207,9 @@
     function hide() { preferences.edge = nearestEdge(launcher.getBoundingClientRect())[0]; preferences.hidden = true; placeLauncher(); close(); savePreferences(); $('.restore').focus(); }
     function show() { preferences.hidden = false; placeLauncher(); savePreferences(); }
     function on(target, event, fn) { target.addEventListener(event, fn, { signal: cleanup.signal }); }
+    on($('.theme'),'click',()=>{ preferences.theme=preferences.theme==='dark'?'light':'dark'; applyTheme(); savePreferences(); });
+    const idleChanged=()=>queueMicrotask(()=>{if(!destroyed)hooks.idle?.();});
+    on(dialog,'close',idleChanged); on(root,'input',idleChanged); on(root,'change',idleChanged);
     function renderAttachments() {
       $('.attachments').replaceChildren();
       attachments.forEach((item, index) => {
@@ -367,9 +393,7 @@
       event.preventDefault(); if (busy || capturing) return;
       const title = form.elements.title.value, description = form.elements.description.value;
       if (!title.trim() || !description.trim()) { message('Preencha o título e a descrição.'); return; }
-      const links = form.elements.links.value.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
-      try { for (const link of links) if (!['https:', 'http:'].includes(new URL(link).protocol)) throw new Error(); }
-      catch { message('Confira os links: use URLs completas começando com https:// ou http://.'); return; }
+      const links = []; // Mantém o formato dos relatos anteriores; a URL da página permanece em context.
       if (!config.endpoint && typeof config.onSubmit !== 'function') { message('O envio ainda não está configurado. Seu relato continua aqui.'); return; }
       const signature = JSON.stringify({ type, title, description, links, user: config.user });
       const files = attachments.map(item => item.file);
@@ -424,7 +448,7 @@
       } catch (error) {
         if (!destroyed) message(`${config.transport === 'signed-upload' && error.name === 'Error' ? error.message + '\n' : ''}Não foi possível enviar. Seu texto e suas imagens foram preservados. Tente novamente.`);
       } finally {
-        clearTimeout(timeout); pendingRequest = undefined; busy = false; $('fieldset').disabled = false; $('.submit').textContent = 'Enviar relato ↗';
+        clearTimeout(timeout); pendingRequest = undefined; busy = false; $('fieldset').disabled = false; $('.submit').textContent = 'Enviar relato ↗'; idleChanged();
       }
     });
 
@@ -465,10 +489,10 @@
     }
     on(window, 'resize', () => { drag = undefined; placeLauncher(); });
     placeLauncher();
-    let availabilityTimer;
     const instance = {
       open, close, hide, show, setPosition,
-      destroy() { destroyed = true; clearInterval(availabilityTimer); cleanup.abort(); pendingRequest?.abort(); activeStream?.getTracks().forEach(track => track.stop()); clearDraft(); dialog.close(); host.remove(); }
+      isIdle() { return !destroyed && !busy && !capturing && !drag && !dialog.open && !attachments.length && !form.elements.title.value && !form.elements.description.value && !submittedDraft; },
+      destroy() { if(destroyed)return; destroyed = true; clearInterval(availabilityTimer); cleanup.abort(); pendingRequest?.abort(); activeStream?.getTracks().forEach(track => track.stop()); clearDraft(); dialog.close(); host.remove(); hooks.destroyed?.(); }
     };
     if (config.endpoint && ['signed-upload','multipart'].includes(config.transport)) {
       const availability=new URL(config.endpoint,location.href);
@@ -484,7 +508,61 @@
       on(document,'visibilitychange',checkAvailability);
     }
     return instance;
+    } catch(error) { clearInterval(availabilityTimer); cleanup.abort(); host.remove(); throw error; }
   }
+  // Referências entregues ao SaaS permanecem válidas após trocar a implementação.
+  function createRuntime() {
+    const state={protocol:1,api:{},instances:new Set(),release,factory:createWidget,source:new URL('central-bugs.js',script?.src || location.href).href,nonce:script?.nonce,timer:null,checking:false};
+    function remove(holder) { holder.closed=true; state.instances.delete(holder); if(!state.instances.size) { clearInterval(state.timer); state.timer=null; } }
+    state.replaceIdle=()=>{
+      for(const holder of state.instances) {
+        if(holder.closed || holder.replacing || holder.version===state.release || !holder.inner.isIdle()) continue;
+        holder.replacing=true;
+        try {
+          const next=state.factory(holder.config,holder.hooks);
+          holder.inner.destroy(); holder.inner=next; holder.version=state.release;
+        } catch { /* Uma falha de atualização mantém a instância anterior. */ }
+        finally { holder.replacing=false; }
+      }
+    };
+    state.create=config=>{
+      const holder={config:{...config},version:state.release,closed:false,replacing:false};
+      holder.hooks={idle:()=>state.replaceIdle(),destroyed:()=>{if(!holder.replacing)remove(holder);}};
+      holder.inner=state.factory(holder.config,holder.hooks); state.instances.add(holder);
+      const handle={};
+      for(const method of ['open','close','hide','show','setPosition']) handle[method]=(...args)=>{if(!holder.closed)return holder.inner[method](...args);};
+      handle.destroy=()=>{if(holder.closed)return; remove(holder); holder.inner.destroy();};
+      Object.defineProperty(handle,'version',{get:()=>holder.version});
+      if(!state.timer) state.timer=setInterval(()=>void state.check(),60000);
+      return handle;
+    };
+    state.check=async()=>{
+      state.replaceIdle();
+      if(state.checking || !state.instances.size || document.hidden) return;
+      state.checking=true;
+      try {
+        const manifestURL=new URL('central-bugs-version.json',state.source);
+        const response=await fetch(manifestURL,{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(10000)});
+        if(!response.ok) return;
+        const latest=await response.json();
+        if(latest.protocol!==state.protocol || !/^[a-f0-9]{64}$/.test(latest.release) || latest.release===state.release) return;
+        await new Promise((resolve,reject)=>{
+          const loader=document.createElement('script'),url=new URL(state.source);url.searchParams.set('cb-release',latest.release);
+          loader.src=url.href;loader.async=true;if(state.nonce)loader.nonce=state.nonce;
+          const timeout=setTimeout(()=>finish(false),15000);
+          const finish=ok=>{clearTimeout(timeout);loader.remove();ok?resolve():reject(new Error('widget-update'));};
+          loader.onload=()=>finish(state.release===latest.release);loader.onerror=()=>finish(false);document.head.append(loader);
+        });
+      } catch { /* Uma rede indisponível ou CSP bloqueando o script preserva o widget e seus dados. */ }
+      finally { state.checking=false; }
+    };
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)void state.check();});
+    return state;
+  }
+  const runtime=window.CentralBugsRuntime || (window.CentralBugsRuntime=createRuntime());
+  if(runtime.protocol!==1) return;
+  runtime.factory=createWidget; runtime.release=release; runtime.replaceIdle();
+  function init(config={}) { return runtime.create(config); }
   async function connect(config = {}) {
     if (typeof config.accessEndpoint!=='string' || !config.accessEndpoint.trim()) throw new Error('Informe o endpoint de acesso do SaaS.');
     const endpoint=new URL(config.accessEndpoint,location.href);
@@ -512,7 +590,8 @@
     config.signal?.addEventListener('abort',()=>instance.destroy(),{once:true});
     return instance;
   }
-  window.CentralBugs = { init, connect };
+  Object.assign(runtime.api,{init,connect,checkForUpdates:runtime.check,version:release});
+  window.CentralBugs=runtime.api;
   if (script?.dataset.projectId) {
     const start = () => { window.CentralBugs.instance = init({ projectId: script.dataset.projectId, endpoint: script.dataset.endpoint, position: script.dataset.position, transport: script.dataset.transport }); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });

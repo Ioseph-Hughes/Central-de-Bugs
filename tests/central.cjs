@@ -35,7 +35,6 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
       await widget.locator(`[data-type="${type}"]`).click();
       await widget.getByLabel('Título', { exact: true }).fill(title);
       await widget.locator('textarea[name=description]').fill(text);
-      await widget.locator('textarea[name=links]').fill('https://example.com/um\nhttps://example.com/dois');
       await widget.locator('input[type=file]').setInputFiles([
         { name: 'print.png', mimeType: 'image/png', buffer: png }, { name: 'outro.png', mimeType: 'image/png', buffer: png }
       ]);
@@ -58,7 +57,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal(await dashboard.locator('.gallery img').count(), 2);
     await dashboard.locator('.gallery img').first().scrollIntoViewIfNeeded();
     await dashboard.waitForFunction(() => [...document.querySelectorAll('.gallery img')].every(img => img.complete && img.naturalWidth > 0), null, {timeout:10000});
-    assert.equal(await dashboard.locator('.detail-links a').count(), 2);
+    assert.equal(await dashboard.locator('.detail-links a').count(), 0);
     assert.equal(await dashboard.getByRole('link', { name: source + '/' }).getAttribute('href'), source + '/');
     await dashboard.getByLabel('Status da ocorrência').selectOption('em-correcao');
     await dashboard.getByText('Status salvo.', { exact: true }).waitFor();

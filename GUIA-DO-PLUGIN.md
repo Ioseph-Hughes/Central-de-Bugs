@@ -24,9 +24,8 @@ A Central online está em [central-de-bugs.vercel.app](https://central-de-bugs.v
 1. Abra **Dar feedback** no SaaS.
 2. Escolha **Relatar um bug**, **Sugerir uma melhoria** ou **Pedir um ajuste**.
 3. Escreva um título e explique o que aconteceu. Para um bug, inclua o resultado esperado e como repetir o problema.
-4. Acrescente links, um por linha, se ajudarem a identificar a página ou situação.
-5. Anexe imagens, cole prints no formulário ou use uma das opções de captura abaixo.
-6. Revise e clique em **Enviar relato**. Aguarde a confirmação do recebimento.
+4. Anexe imagens, cole prints no formulário ou use uma das opções de captura abaixo.
+5. Revise e clique em **Enviar relato**. Aguarde a confirmação do recebimento.
 
 É possível anexar várias imagens e escrever textos longos. O formulário não impõe limite de caracteres ou quantidade de anexos; os limites do navegador e do serviço de armazenamento continuam valendo. Os limites da versão online estão em [DEPLOY.md](DEPLOY.md).
 
@@ -126,3 +125,9 @@ A Central de Sistemas cadastra empresa, sistema e uma ou várias contas principa
 ## Desconectar ou deletar sistemas
 
 Na Central de Sistemas, use **Desconectar do sistema** para desativar o botão e os envios, mantendo o histórico. Use **Deletar sistema** para apagar o cadastro, todos os relatos e seus anexos. Cada ação mostra a empresa/sistema e pede confirmação com **Sim** e **Não**. A desconexão não apaga código de outro projeto; [o guia de integração](INTEGRACAO-PARA-IA.md#desconectar-ou-excluir-um-sistema) inclui instruções para o chat responsável remover a instalação do SaaS.
+
+## Tema e atualizações
+
+O botão **Claro/Escuro** no cabeçalho do popup altera somente o plugin e guarda a preferência por sistema. O formulário usa título, descrição e imagens; a página onde ocorreu o problema é registrada automaticamente, sem precisar de um campo de links.
+
+Instalações que carregam a versão 0.9 ou posterior pela Central verificam novas publicações a cada minuto e ao voltar à aba. A troca espera terminar qualquer formulário, rascunho, captura ou envio. Posição, tema, cadastro e autorização são preservados. Instalações anteriores precisam de uma recarga inicial; cópias locais precisam trocar o carregador para usar a URL hospedada.

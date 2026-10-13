@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { buildCapture } = require('./build-capture.cjs');
+const { widgetRelease } = require('./widget-release.cjs');
 const root = path.resolve(__dirname, '..');
 async function build(output = path.join(root, 'dist')) {
   await fs.rm(output, { recursive: true, force: true }); // Limpar somente a saída gerada, nunca a pasta data/.
@@ -22,6 +23,9 @@ async function build(output = path.join(root, 'dist')) {
   }
   await fs.cp(path.join(root,'icons'),path.join(output,'icons'),{recursive:true});
   await buildCapture(output);
+  const widget=await widgetRelease(path.join(output,'central-bugs-capture.js'));
+  await fs.writeFile(path.join(output,'central-bugs.js'),widget.code);
+  await fs.writeFile(path.join(output,'central-bugs-version.json'),JSON.stringify(widget.manifest));
   if (cloud) await esbuild.build({entryPoints:[path.join(root,'cloud.js')],outfile:path.join(output,'cloud.js'),bundle:true,minify:true,platform:'browser',target:'es2022',define:{CENTRAL_CONFIG:JSON.stringify({url,key})}});
 }
 module.exports = { build };

@@ -1,4 +1,4 @@
-# Central de Bugs · v0.8
+# Central de Bugs · v0.9
 
 **Para integrar um sistema novo com ID e contas autorizadas, siga [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md).** Os exemplos de `init` e instalação por tag abaixo são do modo local/legado e não substituem a autenticação exigida pelos novos cadastros.
 
@@ -194,3 +194,7 @@ PGLITE_PATH=/tmp/central-sql-check/node_modules/@electric-sql/pglite node tests/
 A Central de Sistemas cadastra empresa, sistema e uma ou várias contas principais. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.
 
 A **Central de Sistemas** também permite desconectar um sistema preservando o histórico, ou excluir seu cadastro com todos os relatos e anexos. As duas ações exigem confirmação com Sim/Não. [Guia de desconexão e remoção do código](INTEGRACAO-PARA-IA.md#desconectar-ou-excluir-um-sistema).
+
+## Atualização do widget durante o uso
+
+Carregue `central-bugs.js` pela URL da Central. O build gera `central-bugs-version.json`; a versão 0.9 verifica publicações compatíveis a cada 60 segundos e ao voltar à aba, substituindo somente instâncias ociosas. Rascunhos, anexos e envios não são descartados. As referências `init`/`connect` e a remoção no logout continuam válidas. O popup agora tem Claro/Escuro e não inclui o campo Links; o contexto da página e relatos antigos são preservados. Detalhes de instalação, CSP e migração de cópias locais estão no [guia](INTEGRACAO-PARA-IA.md#atualizações-automáticas-do-widget).
