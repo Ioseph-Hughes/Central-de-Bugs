@@ -55,7 +55,9 @@ language sql set search_path='' as $$
     from public.central_push_devices d
     join public.central_push_events e on e.id>d.seen_id
     join public.central_projects p on p.id=e.project_id
-    where d.id=p_device and (d.system_ids is null or e.project_id=any(d.system_ids))
+    join public.central_admins a on a.user_id=d.user_id
+    where d.id=p_device and (a.is_primary or p.owner_id=d.user_id or d.user_id=any(p.supervisor_ids))
+      and (d.system_ids is null or e.project_id=any(d.system_ids))
     group by e.project_id,p.name
   )
   select jsonb_build_object(
@@ -72,7 +74,10 @@ language sql set search_path='' as $$
     select x.id from public.central_push_devices x
     where (x.lease_until is null or x.lease_until<now()) and exists(
       select 1 from public.central_push_events e
-      where e.id>greatest(x.delivered_id,x.seen_id) and (x.system_ids is null or e.project_id=any(x.system_ids))
+      join public.central_projects p on p.id=e.project_id
+      join public.central_admins a on a.user_id=x.user_id
+      where (a.is_primary or p.owner_id=x.user_id or x.user_id=any(p.supervisor_ids))
+        and e.id>greatest(x.delivered_id,x.seen_id) and (x.system_ids is null or e.project_id=any(x.system_ids))
     ) order by x.updated_at limit 100 for update skip locked
   ) returning d.*;
 $$;

@@ -1,6 +1,6 @@
 const {createHash,randomBytes,timingSafeEqual,ECDH}=require('node:crypto');
 const webpush=require('web-push');
-const {fail,authorizeAdmin}=require('./registry.cjs');
+const {fail,authorizeAdmin,canView}=require('./registry.cjs');
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const checked=result=>{if(result.error?.message==='device_limit')throw fail(409,'O limite é de dez dispositivos por administrador.');if(result.error) throw fail(503,'Notificações indisponíveis. Confira a instalação no banco.'); return result.data;};
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
@@ -87,7 +87,7 @@ function createHandler({client,centralOrigin,send=(...args)=>webpush.sendNotific
       const systems=input.systemIds;
       if(systems!==null && (!Array.isArray(systems) || !systems.length || systems.length>100 || !systems.every(value=>typeof value==='string'))) throw fail(400,'Escolha pelo menos um sistema ou todos os sistemas.');
       if(systems) {
-        const allowed=checked(await client.from('central_projects').select('id'));
+        const allowed=checked(await client.from('central_projects').select('*')).filter(project=>canView(project,user));
         if(systems.some(value=>!allowed.some(project=>project.id===value))) throw fail(400,'Um dos sistemas selecionados não existe mais.');
       }
       await config(client,centralOrigin);

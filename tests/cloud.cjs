@@ -13,6 +13,9 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   const output = await fs.mkdtemp(path.join(os.tmpdir(),'central-cloud-'));
   const rows = new Map(), files = new Map(), uploadTokens = new Set(), payloads = [];
   let origin, handler, failCommit = false, failDelete = false, browser;
+  const memberId='10000000-0000-0000-0000-000000000002';
+  const members=[{user_id:'admin-user',is_primary:true},{user_id:memberId,is_primary:false}];
+  const projectMatch=(url,id)=>{const value=url.searchParams.get('project_id');return !value || value===`eq.${id}` || value.startsWith('in.(') && value.slice(4,-1).split(',').map(v=>v.replaceAll('\"','')).includes(id);};
   const projects = [{id:'central-demo',name:'Central · Testes',origins:[]},{id:'radar-contratual',name:'Radar Contratual',origins:['https://radarcontratual.com']}];
   const json = (res,status,data) => { res.writeHead(status,{'Content-Type':'application/json'}); res.end(JSON.stringify(data)); };
   const read = async req => { const chunks=[]; for await (const chunk of req) chunks.push(chunk); return Buffer.concat(chunks); };
@@ -27,14 +30,15 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
       if (p==='/auth/v1/token') {
         const body=JSON.parse(await read(req));
         if (body.password!=='test-password') return json(res,400,{msg:'Invalid login',error_code:'invalid_credentials'});
-        const admin=body.email==='admin@example.com', id=admin?'admin-user':'viewer-user';
-        return json(res,200,{access_token:admin?'admin-token':'viewer-token',token_type:'bearer',refresh_token:'test-refresh',expires_in:3600,user:{id,email:body.email,aud:'authenticated'}});
+        const admin=body.email==='admin@example.com', member=body.email==='hugo@test.example', id=admin?'admin-user':member?memberId:'viewer-user';
+        return json(res,200,{access_token:admin?'admin-token':member?'hugo-token':'viewer-token',token_type:'bearer',refresh_token:'test-refresh',expires_in:3600,user:{id,email:body.email,aud:'authenticated'}});
       }
       if (p==='/auth/v1/user') {
         const token=req.headers.authorization;
-        if (!['Bearer admin-token','Bearer viewer-token'].includes(token)) return json(res,401,{msg:'invalid token'});
-        return json(res,200,{id:token==='Bearer admin-token'?'admin-user':'viewer-user',email:'admin@example.com'});
+        if (!['Bearer admin-token','Bearer viewer-token','Bearer hugo-token'].includes(token)) return json(res,401,{msg:'invalid token'});
+        return json(res,200,{id:token==='Bearer admin-token'?'admin-user':token==='Bearer hugo-token'?memberId:'viewer-user',email:token==='Bearer hugo-token'?'hugo@test.example':'admin@example.com'});
       }
+      if(p.startsWith('/auth/v1/admin/users/')) return json(res,200,{id:p.split('/').at(-1),email:p.endsWith(memberId)?'hugo@test.example':'admin@example.com'});
       if (p==='/auth/v1/logout') { res.writeHead(204); res.end(); return; }
       if (p.startsWith('/rest/')) {
         assert.equal(req.headers.apikey,'sb_secret_TEST');
@@ -45,8 +49,8 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
           if (req.method==='DELETE') for(const project of selected) projects.splice(projects.indexOf(project),1);
           return json(res,200,req.headers.accept?.includes('vnd.pgrst.object') ? selected[0] : selected);
         }
-        if (p.endsWith('/central_admins')) return json(res,200,url.searchParams.get('user_id')==='eq.admin-user'?[{user_id:'admin-user'}]:[]);
-        if (p.endsWith('/central_report_stats')) return json(res,200,projects.map(project => {
+        if (p.endsWith('/central_admins')) return json(res,200,members.filter(m=>!url.searchParams.has('user_id') || url.searchParams.get('user_id')===`eq.${m.user_id}`));
+        if (p.endsWith('/central_report_stats')) return json(res,200,projects.filter(project=>projectMatch(url,project.id)).map(project => {
           const list=[...rows.values()].filter(row=>row.ready && row.project_id===project.id);
           return {project_id:project.id,total:list.length,new_count:list.filter(row=>row.status==='novo').length,progress_count:list.filter(row=>['em-analise','em-correcao'].includes(row.status)).length,resolved_count:list.filter(row=>row.status==='resolvido').length};
         }));
@@ -60,7 +64,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         if (p.endsWith('/central_reports')) {
           let selected=[...rows.values()];
           if (url.searchParams.has('key')) { const filter=url.searchParams.get('key'); selected=selected.filter(row=>filter===`eq.${row.key}` || filter.startsWith('in.(') && filter.slice(4,-1).split(',').includes(row.key)); }
-          if (url.searchParams.has('project_id')) selected=selected.filter(row=>`eq.${row.project_id}`===url.searchParams.get('project_id'));
+          if (url.searchParams.has('project_id')) selected=selected.filter(row=>projectMatch(url,row.project_id));
           if(url.searchParams.has('limit')) selected=selected.slice(0,Number(url.searchParams.get('limit')));
           if (url.searchParams.has('ready')) selected=selected.filter(row=>`eq.${row.ready}`===url.searchParams.get('ready'));
           if (req.method==='PATCH') {
@@ -73,7 +77,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         }
         if (p.endsWith('/central_report_summaries') || p.endsWith('/rpc/central_search')) {
           const query=req.method==='POST'?JSON.parse(await read(req)).p_query.toLowerCase():'';
-          const summaries=[...rows.values()].filter(row=>row.ready && (!query || `${row.report.title} ${row.report.description} ${row.project_id}`.toLowerCase().includes(query)))
+          const summaries=[...rows.values()].filter(row=>projectMatch(url,row.project_id) && row.ready && (!query || `${row.report.title} ${row.report.description} ${row.project_id}`.toLowerCase().includes(query)))
             .map(row=>({...row,report:{...row.report,title:row.report.title.slice(0,200),description:row.report.description.slice(0,500),links:[]},attachments:[],attachment_count:row.attachments.length,link_count:row.report.links.length}));
           return json(res,200,summaries);
         }
@@ -171,7 +175,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     const registered=projects.find(project=>project.name==='Sistema cadastrado'); assert.ok(registered.restricted);
     assert.ok((await page.locator('#integration-instructions').innerText()).includes('INTEGRACAO-PARA-IA.md'));
     await page.getByRole('button',{name:'Fechar integração'}).click(); await page.waitForFunction(()=>document.querySelector('#access-id').textContent==='');
-    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();
+    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();await page.locator('#system-dialog').waitFor({state:'visible'});
     assert.equal(await page.getByLabel('Contas principais autorizadas',{exact:true}).inputValue(),'mae@example.com\nsegunda@example.com');
     await page.getByRole('button',{name:'Fechar cadastro'}).click();
     await page.setViewportSize({width:390,height:844}); assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -194,7 +198,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     const adminHeaders={Authorization:'Bearer admin-token','Content-Type':'application/json'};
     // A interface publica a opção explícita sem e-mails nem rotação do ID.
     const originalHash=registered.access_hash;
-    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();
+    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();await page.locator('#system-dialog').waitFor({state:'visible'});
     await page.getByLabel('Quem pode usar o plugin?',{exact:true}).selectOption('all');
     await page.locator('#system-origins').fill(origin);
     assert.equal(await page.locator('#system-emails').isVisible(),false);
@@ -204,7 +208,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal(registered.all_accounts,true); assert.deepEqual(registered.allowed_emails,[]);
     assert.equal(registered.access_hash,originalHash);
     await page.getByText('Todas as contas autenticadas do sistema',{exact:true}).waitFor();
-    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();
+    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();await page.locator('#system-dialog').waitFor({state:'visible'});
     assert.equal(await page.locator('#system-scope').inputValue(),'all');
     assert.equal(await page.locator('#system-emails').inputValue(),'');
     await page.getByRole('button',{name:'Fechar cadastro'}).click();
@@ -217,7 +221,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await restrictedPost({action:'commit',key:anyPrepared.key,receipt:anyPrepared.receipt},anyGrant.token)).status,201);
     assert.equal((await fetch(origin+'/api/reports/'+anyPrepared.key,{method:'DELETE',headers:adminHeaders})).status,200);
     const pendingAny=await (await restrictedPost({action:'prepare',report:{...anyReport,id:'pending-any-account'}},anyGrant.token)).json();
-    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();
+    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();await page.locator('#system-dialog').waitFor({state:'visible'});
     await page.locator('#system-scope').selectOption('specific');
     assert.equal(await page.locator('#system-emails').evaluate(el=>el.required),true);
     await page.locator('#system-emails').fill('mae@example.com\nsegunda@example.com');
@@ -333,6 +337,56 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await post({action:'commit',key:prepared.key,receipt:'0'.repeat(64)})).status,403);
     assert.equal((await post({action:'prepare',report:{...report,projectId:'radar-contratual'}})).status,403);
     assert.equal((await fetch(origin+'/api/reports/'+[...rows.keys()][0],{method:'PATCH',headers:{Origin:origin,'Content-Type':'application/json'},body:'{"status":"resolvido"}'})).status,401);
+    // Duas contas reais no protocolo de teste: dono, principal e supervisão por sistema.
+    const memberHeaders={Authorization:'Bearer hugo-token','Content-Type':'application/json'};
+    const asMember=async(url,options={})=>fetch(origin+url,{...options,headers:{...memberHeaders,...options.headers}});
+    assert.equal((await asMember('/api/reports?members=1')).status,403);
+    assert.deepEqual((await (await asMember('/api/reports')).json()).projects,[]);
+    const ownInput={company:'Hugo',name:'Sistema próprio Hugo',allAccounts:true,origins:[origin],owner_id:'admin-user'};
+    const own=await (await asMember('/api/reports?systems=1',{method:'POST',body:JSON.stringify(ownInput)})).json();
+    assert.equal(projects.find(p=>p.id===own.project.id).owner_id,memberId); assert.equal(own.project.canManage,true);
+    assert.equal((await asMember('/api/reports?systems=1',{method:'PATCH',body:JSON.stringify({...ownInput,id:own.project.id,supervisorIds:[memberId]})})).status,403);
+    for(const method of ['PATCH','DELETE']) assert.equal((await asMember('/api/reports?systems=1',{method,body:JSON.stringify({id:'radar-contratual',action:'disconnect'})})).status,404);
+    const shareInput={company:'Abel',name:'Sistema com supervisão Hugo',allAccounts:true,origins:[origin],supervisorIds:[memberId]};
+    const shared=await (await fetch(origin+'/api/reports?systems=1',{method:'POST',headers:adminHeaders,body:JSON.stringify(shareInput)})).json();
+    assert.equal(shared.project.canManage,true); assert.deepEqual(shared.project.supervisorIds,[memberId]);
+    const addRecord=(key,project,title,attachment=false)=>{
+      rows.set(key,{...rows.get(survivorKey),key,project_id:project,report:{...restrictedReport,id:key,projectId:project,title,description:title},attachments:attachment?[{name:'captura.png',path:key+'/0',type:'image/png',size:png.length}]:[],ready:true});
+      if(attachment) files.set(key+'/0',{bytes:png,type:'image/png'});
+    };
+    const ownKey='a'.repeat(64),sharedKey='b'.repeat(64); addRecord(ownKey,own.project.id,'Relato próprio Hugo');addRecord(sharedKey,shared.project.id,'Relato compartilhado',true);
+    const scoped=await (await asMember('/api/reports')).json();
+    assert.deepEqual(new Set(scoped.projects.map(p=>p.id)),new Set([own.project.id,shared.project.id]));
+    assert.deepEqual(new Set(scoped.reports.map(r=>r.key)),new Set([ownKey,sharedKey]));
+    assert.ok(scoped.stats.every(stat=>[own.project.id,shared.project.id].includes(stat.project_id)));
+    assert.equal((await (await asMember('/api/reports?search=Teste%20do%20envio%20online')).json()).reports.length,0);
+    assert.equal((await asMember('/api/reports/'+survivorKey)).status,404);
+    assert.equal((await asMember('/api/reports/'+survivorKey,{method:'PATCH',body:JSON.stringify({status:'resolvido'})})).status,404);
+    assert.equal((await asMember('/api/reports/'+survivorKey,{method:'DELETE'})).status,404);
+    assert.equal((await asMember('/api/reports/'+sharedKey,{method:'PATCH',body:JSON.stringify({status:'em-analise'})})).status,200);
+    assert.equal((await asMember('/api/reports/'+sharedKey,{method:'DELETE'})).status,403);
+    const sharedDetail=await (await asMember('/api/reports/'+sharedKey)).json(); assert.ok(sharedDetail.attachments[0].url);
+    assert.equal((await asMember('/api/reports?systems=1',{method:'PATCH',body:JSON.stringify({id:shared.project.id,action:'disconnect'})})).status,403);
+    assert.equal((await asMember('/api/reports?systems=1',{method:'DELETE',body:JSON.stringify({id:shared.project.id})})).status,403);
+    await page.getByLabel('E-mail',{exact:true}).fill('hugo@test.example');await page.getByLabel('Senha',{exact:true}).fill('test-password');await page.getByRole('button',{name:'Entrar',exact:true}).click();
+    await page.getByText('Seus sistemas e supervisões',{exact:true}).waitFor();await page.getByRole('button',{name:'Atualizar',exact:false}).click();await page.getByRole('button',{name:'Abrir ocorrência: Relato compartilhado',exact:true}).waitFor();
+    assert.equal(await page.locator('[data-central-bugs]').count(),0);assert.equal(await page.getByRole('button',{name:'Testar o widget'}).isVisible(),false);
+    assert.equal(await page.getByRole('button',{name:'Apagar ocorrência: Relato compartilhado',exact:true}).count(),0);
+    assert.equal(await page.getByRole('button',{name:'Apagar ocorrência: Relato próprio Hugo',exact:true}).count(),1);
+    await page.getByRole('button',{name:'Central de Sistemas'}).click();
+    assert.equal(await page.getByRole('button',{name:'Editar sistema: Sistema com supervisão Hugo',exact:true}).count(),0);
+    await page.getByRole('button',{name:'Editar sistema: Sistema próprio Hugo',exact:true}).click();await page.locator('#system-dialog').waitFor({state:'visible'});assert.equal(await page.locator('#system-supervision').isVisible(),false);await page.getByRole('button',{name:'Fechar cadastro'}).click();
+    await page.getByRole('button',{name:'Ocorrências',exact:false}).click();await page.getByRole('button',{name:'Abrir ocorrência: Relato compartilhado',exact:true}).click();
+    assert.equal(await page.getByRole('button',{name:'Apagar ocorrência e anexos',exact:true}).count(),0);
+    assert.equal((await fetch(origin+'/api/reports?systems=1',{method:'PATCH',headers:adminHeaders,body:JSON.stringify({...shareInput,id:shared.project.id,supervisorIds:[]})})).status,200);
+    await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await page.locator('#detail').waitFor({state:'hidden'});
+    await page.waitForFunction(()=>!document.querySelector('#reports').textContent.includes('Relato compartilhado'));
+    assert.equal((await asMember('/api/reports/'+sharedKey)).status,404);assert.equal((await asMember('/api/reports/'+sharedKey,{method:'PATCH',body:JSON.stringify({status:'resolvido'})})).status,404);
+    assert.ok((await (await fetch(origin+'/api/reports',{headers:adminHeaders})).json()).projects.some(p=>p.id===own.project.id));
+    assert.equal((await asMember('/api/reports?systems=1',{method:'PATCH',body:JSON.stringify({...ownInput,id:own.project.id,owner_id:'admin-user'})})).status,200);assert.equal(projects.find(p=>p.id===own.project.id).owner_id,memberId);
+    assert.equal((await asMember('/api/reports/'+ownKey,{method:'DELETE'})).status,200);
+    await page.getByRole('button',{name:'Sair',exact:true}).click();await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor();assert.equal(await page.locator('#detail-content').innerText(),'');
+    assert.deepEqual(errors,[]);
     console.log('OK: login/admin, CORS, upload/retry, detalhes/busca, quatro etapas, cadastro/edição, contas específicas/todas autenticadas, revogação entre modos, múltiplas contas, ID secreto/rotação, origem e conta verificadas, exclusão completa e recuperação de falha do Storage, cancelamento Sim/Não, desconexão, exclusão de sistema com mais de 200 registros/pendências e isolamento.');
   } catch(error) {const page=browser?.contexts()[0]?.pages()[0];if(page)console.error(await page.evaluate(()=>({loginHidden:document.querySelector('#login-screen')?.hidden,workspaceHidden:document.querySelector('#workspace')?.hidden,notifications:document.querySelector('#notifications-message')?.textContent})));throw error;}
   finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); await fs.rm(output,{recursive:true,force:true}); }

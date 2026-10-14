@@ -48,7 +48,7 @@ class Query {
     await db.exec(await fs.readFile(path.join(__dirname,'../supabase/setup.sql'),'utf8'));
     const sql=await fs.readFile(path.join(__dirname,'../supabase/migrations/20261012224258_push_notifications.sql'),'utf8');
     await db.exec(sql);await db.exec(sql);
-    await db.query('insert into auth.users values($1),($2)',[admin,other]);await db.query('insert into public.central_admins values($1),($2)',[admin,other]);
+    await db.query('insert into auth.users values($1),($2)',[admin,other]);await db.query('insert into public.central_admins(user_id,is_primary) values($1,true),($2,false)',[admin,other]);
     for(const role of ['anon','authenticated']) {
       await db.exec('set role '+role);
       for(const table of ['central_push_config','central_push_events','central_push_devices']) await assert.rejects(db.query('select * from public.'+table),/permission denied/);
@@ -172,6 +172,21 @@ class Query {
     assert.deepEqual(errors,[]);
     await call('POST',{subscription:sub,systemIds:null});await report(8);
     sendError=Object.assign(new Error('gone'),{statusCode:410});assert.equal((await dispatch()).value.expired,1);assert.equal((await db.query('select count(*)::int as n from public.central_push_devices')).rows[0].n,0);
+    // Todas as notificações respeitam propriedade e supervisão, inclusive após revogação.
+    assert.equal((await call('POST',{subscription:sub,systemIds:['radar-contratual']},'other')).status,400);
+    const privateSub={...sub,endpoint:sub.endpoint+'-isolated-account'};
+    const privateDevice=(await call('POST',{subscription:privateSub,systemIds:null},'other')).value.id;
+    await report(701,'radar-contratual');
+    assert.equal((await call('GET',null,'other','?device='+privateDevice)).value.summary.total,0);
+    assert.equal((await dispatch()).value.sent,0);
+    await db.query('update public.central_projects set supervisor_ids=array[$1::uuid] where id=$2',[other,'radar-contratual']);
+    assert.equal((await call('GET',null,'other','?device='+privateDevice)).value.summary.total,1);
+    assert.equal((await dispatch()).value.sent,1);assert.equal(sent.at(-1).value.userId,other);
+    await report(702,'radar-contratual');
+    await db.query("update public.central_projects set supervisor_ids='{}' where id='radar-contratual'");
+    assert.equal((await call('GET',null,'other','?device='+privateDevice)).value.summary.total,0);
+    assert.equal((await dispatch()).value.sent,0);
+    await call('DELETE',{id:privateDevice},'other');
     const caps=await Promise.all(Array.from({length:11},(_,index)=>call('POST',{subscription:{...sub,endpoint:sub.endpoint+'-limit-'+index},systemIds:null},'other')));
     assert.equal(caps.filter(item=>item.status===200).length,10);assert.equal(caps.filter(item=>item.status===409).length,1);
     await db.query('delete from public.central_admins where user_id=$1',[other]);

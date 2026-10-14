@@ -3,7 +3,8 @@ begin;
 create table if not exists public.central_projects (
   id text primary key, name text not null, origins text[] not null default '{}',
   company text, allowed_emails text[] not null default '{}', restricted boolean not null default false,
-  all_accounts boolean not null default false, access_hash text, connected_at timestamptz
+  all_accounts boolean not null default false, access_hash text, connected_at timestamptz,
+  owner_id uuid references auth.users(id) on delete set null, supervisor_ids uuid[] not null default '{}'
 );
 -- Compatibilidade ao executar setup sobre uma instalação anterior.
 alter table public.central_projects add column if not exists all_accounts boolean not null default false;
@@ -14,8 +15,14 @@ alter table public.central_projects add column if not exists access_hash text;
 alter table public.central_projects add column if not exists connected_at timestamptz;
 create unique index if not exists central_projects_access on public.central_projects(access_hash) where access_hash is not null;
 create table if not exists public.central_admins (
-  user_id uuid primary key references auth.users(id) on delete cascade
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  is_primary boolean not null default false
 );
+alter table public.central_admins add column if not exists is_primary boolean not null default false;
+create unique index if not exists central_primary_account on public.central_admins(is_primary) where is_primary;
+alter table public.central_projects add column if not exists owner_id uuid references auth.users(id) on delete set null;
+alter table public.central_projects add column if not exists supervisor_ids uuid[] not null default '{}';
+create index if not exists central_projects_owner on public.central_projects(owner_id);
 create table if not exists public.central_reports (
   key text primary key check (key ~ '^[a-f0-9]{64}$'),
   project_id text not null references public.central_projects(id),

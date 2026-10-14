@@ -198,3 +198,7 @@ A **Central de Sistemas** também permite desconectar um sistema preservando o h
 ## Atualização do widget durante o uso
 
 Carregue `central-bugs.js` pela URL da Central. O build gera `central-bugs-version.json`; a versão 0.9 verifica publicações compatíveis a cada 60 segundos e ao voltar à aba, substituindo somente instâncias ociosas. Rascunhos, anexos e envios não são descartados. As referências `init`/`connect` e a remoção no logout continuam válidas. O popup agora tem Claro/Escuro e não inclui o campo Links; o contexto da página e relatos antigos são preservados. Detalhes de instalação, CSP e migração de cópias locais estão no [guia](INTEGRACAO-PARA-IA.md#atualizações-automáticas-do-widget).
+
+## Contas e supervisão (v0.11)
+
+Cada conta cadastra seus próprios sistemas. A conta principal administra todos e pode selecionar supervisores no cadastro ou na edição de um sistema. Supervisores acompanham bugs e alteram status; somente o dono e a conta principal podem apagar dados ou alterar a integração. Consulte [o guia de contas e supervisão](CONTAS-E-SUPERVISAO.md) para instalação, migração e permissões.

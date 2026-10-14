@@ -131,3 +131,7 @@ Na Central de Sistemas, use **Desconectar do sistema** para desativar o botão e
 O botão **Claro/Escuro** no cabeçalho do popup altera somente o plugin e guarda a preferência por sistema. O formulário usa título, descrição e imagens; a página onde ocorreu o problema é registrada automaticamente, sem precisar de um campo de links.
 
 Instalações que carregam a versão 0.9 ou posterior pela Central verificam novas publicações a cada minuto e ao voltar à aba. A troca espera terminar qualquer formulário, rascunho, captura ou envio. Posição, tema, cadastro e autorização são preservados. Instalações anteriores precisam de uma recarga inicial; cópias locais precisam trocar o carregador para usar a URL hospedada.
+
+## Contas e supervisão (v0.11)
+
+Cada conta cadastra seus próprios sistemas. A conta principal administra todos e pode selecionar supervisores no cadastro ou na edição de um sistema. Supervisores acompanham bugs e alteram status; somente o dono e a conta principal podem apagar dados ou alterar a integração. Consulte [o guia de contas e supervisão](CONTAS-E-SUPERVISAO.md) para instalação, migração e permissões.
