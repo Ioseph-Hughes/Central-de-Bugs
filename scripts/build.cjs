@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { buildCapture } = require('./build-capture.cjs');
+const { buildReport } = require('./build-report.cjs');
 const { widgetRelease } = require('./widget-release.cjs');
 const root = path.resolve(__dirname, '..');
 async function build(output = path.join(root, 'dist')) {
@@ -23,6 +24,7 @@ async function build(output = path.join(root, 'dist')) {
   }
   await fs.cp(path.join(root,'icons'),path.join(output,'icons'),{recursive:true});
   await buildCapture(output);
+  await buildReport(output);
   const widget=await widgetRelease(path.join(output,'central-bugs-capture.js'));
   await fs.writeFile(path.join(output,'central-bugs.js'),widget.code);
   await fs.writeFile(path.join(output,'central-bugs-version.json'),JSON.stringify(widget.manifest));

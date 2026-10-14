@@ -113,7 +113,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
         }
       }
       const name=p==='/'?'index.html':p.slice(1);
-      if (!['index.html','dashboard.js','dashboard.css','cloud.js','central-bugs.js','central-bugs-version.json','notifications.js','service-worker.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/badge.png'].includes(name)) return json(res,404,{});
+      if (!['index.html','dashboard.js','dashboard.css','cloud.js','report-generator.bundle.js','central-bugs.js','central-bugs-version.json','notifications.js','service-worker.js','manifest.webmanifest','icons/icon-192.png','icons/icon-512.png','icons/badge.png'].includes(name)) return json(res,404,{});
       res.setHeader('Content-Type',name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':name.endsWith('.png')?'image/png':name.endsWith('.webmanifest')?'application/manifest+json':'text/html; charset=utf-8');
       res.end(await fs.readFile(path.join(output,name)));
     } catch (error) { console.error(error); json(res,500,{error:error.message}); }
@@ -169,6 +169,14 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.deepEqual(Buffer.from(await pdfResponse.arrayBuffer()),pdf);
     assert.equal(await pdfLink.locator('img').count(),0);
     await pdfLink.screenshot({path:path.join(__dirname,'../artifacts/pdf-detail.png')});
+    await page.getByRole('button',{name:'Gerar arquivo',exact:true}).click();
+    await page.getByRole('link',{name:'Baixar PDF',exact:true}).waitFor();
+    const [generatedPDF]=await Promise.all([page.waitForEvent('download'),page.getByRole('link',{name:'Baixar PDF',exact:true}).click()]);
+    await generatedPDF.saveAs(path.join(__dirname,'../artifacts/export/cloud.pdf'));
+    assert.equal((await fs.readFile(await generatedPDF.path())).subarray(0,5).toString(),'%PDF-');
+    const [originalPDF]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Baixar arquivo: relatorio.pdf',exact:true}).click()]);
+    assert.deepEqual(await fs.readFile(await originalPDF.path()),pdf);
+    await page.getByRole('button',{name:'Fechar geração de arquivo'}).click();
     await page.getByRole('button',{name:'Fechar detalhes'}).click(); await page.getByRole('button',{name:'Resolver ocorrência: Teste do envio online',exact:true}).click();
     await page.getByRole('button',{name:'Ocorrência resolvida: Teste do envio online',exact:true}).waitFor(); assert.equal([...rows.values()][0].status,'resolvido'); assert.equal(await page.locator('#resolved-count').innerText(),'1');
     await page.getByRole('searchbox').fill('Texto fora da prévia'); await page.waitForTimeout(600); assert.equal(await page.locator('.occurrence').count(),1);
@@ -394,8 +402,12 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await page.getByRole('button',{name:'Editar sistema: Sistema próprio Hugo',exact:true}).click();await page.locator('#system-dialog').waitFor({state:'visible'});assert.equal(await page.locator('#system-supervision').isVisible(),false);await page.getByRole('button',{name:'Fechar cadastro'}).click();
     await page.getByRole('button',{name:'Ocorrências',exact:false}).click();await page.getByRole('button',{name:'Abrir ocorrência: Relato compartilhado',exact:true}).click();
     assert.equal(await page.getByRole('button',{name:'Apagar ocorrência e anexos',exact:true}).count(),0);
+    await page.getByRole('button',{name:'Gerar arquivo',exact:true}).click();
+    await page.getByRole('link',{name:'Baixar PDF',exact:true}).waitFor();
     assert.equal((await fetch(origin+'/api/reports?systems=1',{method:'PATCH',headers:adminHeaders,body:JSON.stringify({...shareInput,id:shared.project.id,supervisorIds:[]})})).status,200);
     await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await page.locator('#detail').waitFor({state:'hidden'});
+    await page.locator('#export-dialog').waitFor({state:'hidden'});
+    assert.equal(await page.locator('#export-download').getAttribute('href'),null);
     await page.waitForFunction(()=>!document.querySelector('#reports').textContent.includes('Relato compartilhado'));
     assert.equal((await asMember('/api/reports/'+sharedKey)).status,404);assert.equal((await asMember('/api/reports/'+sharedKey,{method:'PATCH',body:JSON.stringify({status:'resolvido'})})).status,404);
     assert.ok((await (await fetch(origin+'/api/reports',{headers:adminHeaders})).json()).projects.some(p=>p.id===own.project.id));

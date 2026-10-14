@@ -23,6 +23,7 @@ O comando inicia as portas 4173 (painel/API) e 4181 (receptor compatível com o 
 - Sistemas separados na navegação e nas listas; novos sistemas são cadastrados na Central de Sistemas antes do primeiro relato.
 - Ocorrências de bug/erro, melhoria ou ajuste, com busca e filtros de tipo/status.
 - Detalhes com texto completo, imagens, links, página de origem, horário e contexto.
+- **Gerar arquivo** nos detalhes: abre uma janela e prepara um PDF com texto completo, status, links, contexto, usuário e prints ampliados. Prints compridos são divididos em páginas sem reduzir toda a imagem a uma miniatura. PDFs anexados aparecem abaixo do documento, com downloads separados que preservam os arquivos originais. A geração é opcional e acontece no navegador, com biblioteca e fontes locais carregadas somente ao clicar; não altera a ocorrência nem exige migração do banco.
 - Blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os valores internos permanecem `novo`, `em-analise`, `em-correcao` e `resolvido`. O botão **Resolver** em cada ocorrência marca como resolvida diretamente na lista; a alteração fica salva e pode ser revista nos detalhes.
 - Atualização automática a cada três segundos com a aba visível e atualização manual.
 - Modo claro/escuro com preferência persistida no navegador; inicialmente segue o sistema.
@@ -162,6 +163,8 @@ npm install
 npx playwright install chromium
 npm test
 ```
+
+`npm run test:report` verifica a geração e o download do PDF, prints amplos/compridos, texto longo, vários anexos originais, somente PDF ou nenhum anexo, falhas com nova tentativa, cancelamento, limpeza de URLs temporárias e layout mobile. O teste online também verifica geração a partir dos detalhes completos, downloads privados e limpeza ao perder acesso por supervisão. Evidências ficam em `artifacts/export/`.
 
 `npm run test:mobile` usa Chromium com perfil Pixel 7 (toque, DPR, viewport e agente Android), desativa explicitamente `getDisplayMedia` e captura o DOM de verdade, sem simular a imagem. Verifica rolagem, elemento fixo, CSS moderno, exclusão de senha/região privada, recorte por toque, cancelamento, rotação, recuperação de falha, envio e leitura de três PNGs no receptor e no painel mobile. Evidências ficam em `artifacts/mobile/`. A emulação não substitui validação em um aparelho físico.
 
