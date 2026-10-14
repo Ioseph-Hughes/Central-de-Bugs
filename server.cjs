@@ -86,7 +86,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
       }
       if (url.pathname==='/api/reports' && url.searchParams.get('systems')==='1') {
         if (origin && origin!==`http://${req.headers.host}`) throw registry.fail(403,'Gerencie sistemas no painel da Central.');
-        if (req.method==='GET') { json(res,200,{projects:catalog.projects.filter(project=>project.id!=='central-demo').map(registry.publicProject)}); return; }
+        if (req.method==='GET') { json(res,200,{projects:catalog.projects.filter(project=>project.id!=='central-demo').map(project=>registry.publicProject(project))}); return; }
         const input=JSON.parse(await body(req));
         const result=await write(async()=>{
           const next=structuredClone(catalog);
@@ -113,7 +113,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
         json(res,req.method==='POST'?201:200,result); return;
       }
       if (req.method === 'GET' && url.pathname === '/api/reports') {
-        json(res, 200, { reports: [...records.values()].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)),projects:catalog.projects.map(registry.publicProject) }); return;
+        json(res, 200, { reports: [...records.values()].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)),projects:catalog.projects.map(project=>registry.publicProject(project)) }); return;
       }
       if (req.method === 'POST' && ['/reports', '/api/reports'].includes(url.pathname)) {
         const form = await new Request('http://localhost/reports', { method: 'POST', headers: req.headers, body: await body(req) }).formData();

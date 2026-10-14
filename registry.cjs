@@ -22,9 +22,12 @@ function fields(input) {
 }
 function credential() { const accessId = 'cb_' + randomBytes(32).toString('base64url'); return {accessId,access_hash:hash(accessId)}; }
 function create(input) { const {accessId,access_hash}=credential(); return {accessId,project:{id:'sys-'+randomUUID(),...fields(input),access_hash}}; }
-function publicProject(project) {
+const canView = (project,user) => !!project && (user.isPrimary || project.owner_id===user.id || (project.supervisor_ids || []).includes(user.id));
+const canManage = (project,user) => !!project && (user.isPrimary || project.owner_id===user.id);
+function publicProject(project,user) {
   return {id:project.id,name:project.name,company:project.company || project.name,origins:project.origins,
-    allowedEmails:project.allowed_emails || [],allAccounts:project.all_accounts === true,restricted:project.restricted === true,disconnected:!enabled(project),connectedAt:project.connected_at || null};
+    allowedEmails:project.allowed_emails || [],allAccounts:project.all_accounts === true,restricted:project.restricted === true,disconnected:!enabled(project),connectedAt:project.connected_at || null,
+    ownerId:project.owner_id || null,supervisorIds:user && !canManage(project,user)?[]:project.supervisor_ids || [],canManage:!user || canManage(project,user)};
 }
 const enabled = project => !!project && (!project.restricted || !!project.access_hash);
 const disconnect = () => ({restricted:true,access_hash:null,connected_at:null});
@@ -59,9 +62,9 @@ async function authorizeAdmin(client,req) {
   if (!token) throw fail(401,'Entre no painel para acessar as ocorrências.');
   const {data,error}=await client.auth.getUser(token);
   if (error || !data?.user) throw fail(401,'Sessão inválida. Entre novamente.');
-  const admin=await client.from('central_admins').select('user_id').eq('user_id',data.user.id).maybeSingle();
+  const admin=await client.from('central_admins').select('user_id,is_primary').eq('user_id',data.user.id).maybeSingle();
   if (admin.error) throw fail(503,'Não foi possível conferir o acesso administrativo.');
   if (!admin.data) throw fail(403,'Este usuário ainda não foi autorizado como administrador.');
-  return data.user;
+  return {...data.user,isPrimary:admin.data.is_primary === true};
 }
-module.exports={fail,hash,email,fields,credential,create,publicProject,accessInput,authorizeAccount,ticket,checkTicket,enabled,disconnect,authorizeAdmin};
+module.exports={fail,hash,email,fields,credential,create,publicProject,accessInput,authorizeAccount,ticket,checkTicket,enabled,disconnect,authorizeAdmin,canView,canManage};

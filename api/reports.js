@@ -46,6 +46,19 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
   async function authorize(req) {
     return registry.authorizeAdmin(client,req);
   }
+  function permission(project,user,manage=false) {
+    if (!registry.canView(project,user)) throw fail(404,'Sistema ou ocorrência não encontrado.');
+    if (manage && !registry.canManage(project,user)) throw fail(403,'Somente o dono do sistema ou a conta principal pode fazer esta alteração.');
+  }
+  async function supervisors(input,user) {
+    if(input.supervisorIds===undefined) return {};
+    if(!user.isPrimary) throw fail(403,'Somente a conta principal pode compartilhar a supervisão.');
+    const ids=input.supervisorIds;
+    if(!Array.isArray(ids) || ids.length>100 || !ids.every(id=>typeof id==='string' && /^[a-f0-9-]{36}$/i.test(id))) throw fail(400,'Supervisores inválidos.');
+    const members=checked(await client.from('central_admins').select('user_id'));
+    if(ids.some(id=>!members.some(member=>member.user_id===id))) throw fail(400,'Escolha uma conta cadastrada na Central.');
+    return {supervisor_ids:[...new Set(ids)]};
+  }
   async function publicRecord(row, includeImages = true) {
     // Links expiram; gerar de novo na consulta, sem mudar o fingerprint do painel.
     const attachments = row.attachments.map(file => ({ ...file }));
@@ -91,31 +104,48 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
       res.setHeader('Access-Control-Allow-Methods','GET, POST, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');
       if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+      if(url.searchParams.get('members')==='1') {
+        const user=await authorize(req);
+        if(!user.isPrimary) throw fail(403,'Somente a conta principal pode consultar as contas de supervisão.');
+        if(req.method!=='GET') throw fail(405,'Método não permitido.');
+        const accounts=[];
+        for(const member of checked(await client.from('central_admins').select('user_id'))) {
+          if(member.user_id===user.id) continue;
+          const result=await client.auth.admin.getUserById(member.user_id);
+          if(result.error) throw fail(503,'Não foi possível consultar as contas de supervisão.');
+          if(result.data?.user?.email) accounts.push({id:member.user_id,email:result.data.user.email});
+        }
+        json(res,200,{accounts}); return;
+      }
       const key = req.query?.key || url.searchParams.get('key') || url.pathname.match(/^\/api\/reports\/([a-f0-9]{64})$/)?.[1];
       if (url.searchParams.get('systems') === '1') {
-        await authorize(req);
-        if (req.method==='GET') { json(res,200,{projects:projects.filter(project=>project.id!=='central-demo').map(registry.publicProject)}); return; }
+        const user=await authorize(req);
+        if (req.method==='GET') { json(res,200,{projects:projects.filter(project=>project.id!=='central-demo' && registry.canView(project,user)).map(project=>registry.publicProject(project,user))}); return; }
         const input=await body(req);
         if (req.method==='POST') {
           const created=registry.create(input);
+          Object.assign(created.project,{owner_id:user.id},await supervisors(input,user));
           checked(await client.from('central_projects').insert(created.project));
-          json(res,201,{project:registry.publicProject(created.project),accessId:created.accessId}); return;
+          json(res,201,{project:registry.publicProject(created.project,user),accessId:created.accessId}); return;
         }
         if (req.method==='PATCH') {
           const old=projects.find(project=>project.id===input.id && project.id!=='central-demo');
           if (!old) throw fail(404,'Sistema não encontrado.');
+          permission(old,user,true);
           if (input.action==='disconnect') {
             const saved=checked(await client.from('central_projects').update(registry.disconnect()).eq('id',old.id).select('*').single());
-            json(res,200,{project:registry.publicProject(saved)}); return;
+            json(res,200,{project:registry.publicProject(saved,user)}); return;
           }
           const changes=registry.fields(input), generated=input.rotateId===true || !old.access_hash ? registry.credential() : null;
+          Object.assign(changes,await supervisors(input,user));
           if (generated) {changes.access_hash=generated.access_hash;changes.connected_at=null;}
           const saved=checked(await client.from('central_projects').update(changes).eq('id',old.id).select('*').single());
-          json(res,200,{project:registry.publicProject(saved),...(generated?{accessId:generated.accessId}:{})}); return;
+          json(res,200,{project:registry.publicProject(saved,user),...(generated?{accessId:generated.accessId}:{})}); return;
         }
         if (req.method==='DELETE') {
           const project=projects.find(item=>item.id===input.id && item.id!=='central-demo');
           if (!project) throw fail(404,'Sistema não encontrado.');
+          permission(project,user,true);
           // Revogar antes da limpeza; em falha, manter o cadastro para repetir a exclusão.
           checked(await client.from('central_projects').update(registry.disconnect()).eq('id',project.id));
           const rows=checked(await client.from('central_reports').select('key,attachments').eq('project_id',project.id).order('key').limit(100));
@@ -130,18 +160,21 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         throw fail(405,'Método não permitido.');
       }
       if (req.method === 'GET') {
-        await authorize(req);
-        if (url.searchParams.get('access') === 'check') { json(res,200,{authorized:true}); return; }
+        const user=await authorize(req);
+        if (url.searchParams.get('access') === 'check') { json(res,200,{authorized:true,isPrimary:user.isPrimary}); return; }
+        const visible=projects.filter(project=>registry.canView(project,user)),ids=visible.map(project=>project.id);
         if (key) {
           if (typeof key !== 'string' || !/^[a-f0-9]{64}$/.test(key)) throw fail(400,'Ocorrência inválida.');
           const row = checked(await client.from('central_reports').select('*').eq('key',key).eq('ready',true).maybeSingle());
           if (!row) throw fail(404,'Ocorrência não encontrada.');
+          permission(projects.find(project=>project.id===row.project_id),user);
           json(res,200,await publicRecord(row)); return;
         }
         const search = (url.searchParams.get('search') || '').trim();
         if (search.length > 1000) throw fail(400,'Busca muito longa.');
+        if(!ids.length) {json(res,200,{reports:[],stats:[],projects:[],account:{isPrimary:user.isPrimary}});return;}
         const query = search ? client.rpc('central_search',{p_query:search}) : client.from('central_report_summaries').select('*');
-        const results = await Promise.all([query.order('received_at',{ascending:false}).limit(1000),client.from('central_report_stats').select('*')]);
+        const results = await Promise.all([query.in('project_id',ids).order('received_at',{ascending:false}).limit(1000),client.from('central_report_stats').select('*').in('project_id',ids)]);
         const rows = checked(results[0]), stats = checked(results[1]);
         // ponytail: um lote até 1.000 ocorrências; paginar quando o histórico superar este volume.
         // A lista usa resumos; textos completos e links privados das imagens só nos detalhes.
@@ -150,22 +183,25 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
           const item = {key:row.key,report:row.report,attachments:[],attachmentCount:row.attachment_count,linkCount:row.link_count,status:row.status,receivedAt:row.received_at,updatedAt:row.updated_at};
           length += Buffer.byteLength(JSON.stringify(item)); if (length > 2 * 1024 * 1024) break; reports.push(item);
         }
-        json(res,200,{ reports,stats,limited:rows.length===1000 || reports.length<rows.length,projects:projects.map(registry.publicProject) }); return;
+        json(res,200,{ reports,stats,limited:rows.length===1000 || reports.length<rows.length,projects:visible.map(project=>registry.publicProject(project,user)),account:{isPrimary:user.isPrimary} }); return;
       }
       if (req.method === 'DELETE') {
-        await authorize(req);
+        const user=await authorize(req);
         if (typeof key !== 'string' || !/^[a-f0-9]{64}$/.test(key)) throw fail(400,'Ocorrência inválida.');
         const row=checked(await client.from('central_reports').select('*').eq('key',key).eq('ready',true).maybeSingle());
         if (!row) throw fail(404,'Ocorrência não encontrada.');
+        permission(projects.find(project=>project.id===row.project_id),user,true);
         // Só retirar o registro após excluir seus arquivos. Em falha, a operação pode ser repetida.
         if (row.attachments.length) checked(await client.storage.from(bucket).remove(row.attachments.map(file=>file.path)));
         checked(await client.from('central_reports').delete().eq('key',key));
         json(res,200,{deleted:true}); return;
       }
       if (req.method === 'PATCH') {
-        await authorize(req);
+        const user=await authorize(req);
         if (typeof key !== 'string' || !/^[a-f0-9]{64}$/.test(key)) throw fail(400,'Ocorrência inválida.');
         const input = await body(req); if (!states.includes(input.status)) throw fail(400,'Status inválido.');
+        const existing=checked(await client.from('central_reports').select('project_id').eq('key',key).eq('ready',true).maybeSingle());
+        permission(projects.find(project=>project.id===existing?.project_id),user);
         const row = checked(await client.from('central_reports').update({status:input.status,updated_at:new Date().toISOString()}).eq('key',key).eq('ready',true).select('*').maybeSingle());
         if (!row) throw fail(404,'Ocorrência não encontrada.');
         json(res,200,await publicRecord(row,false)); return;

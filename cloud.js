@@ -21,11 +21,11 @@ window.CentralCloud = {
       onLogout();
       try {
         if (!session) return;
-        await window.CentralCloud.api('/api/reports?access=check');
+        const account=await window.CentralCloud.api('/api/reports?access=check');
         if (current !== generation) return;
         screen.hidden = true; app.hidden = false; logout.hidden = false;
         document.querySelector('#admin-email').textContent = session.user.email;
-        onAccess(session.user.id);
+        onAccess(session.user.id,account);
       } catch (error) { if (current === generation) alert.textContent = error.message; }
       finally { if (current === generation) button.disabled = false; }
     }

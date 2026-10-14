@@ -19,8 +19,17 @@ const { PGlite } = require(process.env.PGLITE_PATH || '@electric-sql/pglite');
     await db.exec(migration); await db.exec(migration);
     const scopeMigration=await fs.readFile(path.join(__dirname,'../supabase/migrations/20261014005611_optional_account_scope.sql'),'utf8');
     await db.exec(scopeMigration); await db.exec(scopeMigration);
+    const primary='10000000-0000-0000-0000-000000000001',member='10000000-0000-0000-0000-000000000002';
+    await db.query('insert into auth.users(id,email) values($1,$2),($3,$4)',[primary,'abelcamargoo99@gmail.com',member,'hugo@test.example']);
+    await db.query('insert into public.central_admins(user_id) values($1),($2)',[primary,member]);
+    await db.exec(await fs.readFile(path.join(__dirname,'../supabase/migrations/20261012224258_push_notifications.sql'),'utf8'));
+    const ownership=await fs.readFile(path.join(__dirname,'../supabase/migrations/20261014011509_account_ownership_supervision.sql'),'utf8');
+    await db.exec(ownership);await db.exec(ownership);
+    assert.equal((await db.query('select is_primary from public.central_admins where user_id=$1',[primary])).rows[0].is_primary,true);
+    assert.equal((await db.query('select is_primary from public.central_admins where user_id=$1',[member])).rows[0].is_primary,false);
+    await assert.rejects(db.query('update public.central_admins set is_primary=true where user_id=$1',[member]),/duplicate key/);
     const prior=(await db.query("select * from public.central_projects where id='prior'")).rows[0];
-    assert.equal(prior.name,'Cadastro anterior'); assert.deepEqual(prior.origins,['https://anterior.example']); assert.equal(prior.restricted,false); assert.equal(prior.all_accounts,false);
+    assert.equal(prior.name,'Cadastro anterior'); assert.deepEqual(prior.origins,['https://anterior.example']); assert.equal(prior.restricted,false); assert.equal(prior.all_accounts,false);assert.equal(prior.owner_id,primary);assert.deepEqual(prior.supervisor_ids,[]);
     assert.equal((await db.query('select public from storage.buckets')).rows[0].public,false);
     for (const role of ['anon','authenticated']) {
       await db.exec(`set role ${role}`);

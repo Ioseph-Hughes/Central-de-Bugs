@@ -10,6 +10,8 @@
   const icons = { bug: '⌁', melhoria: '✧', ajuste: '↗' };
   let projects = [], editingSystem = null, systemAction = null, deleting = false, deletionRecords = [], revision = 0;
   let records = [], stats = [], selectedSystem = '', loading = false, fingerprint = '', active = !cloud, epoch = 0;
+  let isPrimary=!cloud, accountId=null, detailProject=null, supervisorAccounts=[];
+  const canManage=id=>projects.some(project=>project.id===id && project.canManage!==false);
   const urlScope=()=>{const ids=new URLSearchParams(location.search).get('systems');return ids ? new Set(ids.split(',').slice(0,100).filter(id=>/^[\w-]{1,100}$/.test(id))) : null;};
   let notificationScope=urlScope();
   window.addEventListener('central-notification-open',event=>{const url=new URL(location.href);url.searchParams.set('notifications','1');url.searchParams.set('systems',event.detail.join(','));history.replaceState(null,'',url);notificationScope=urlScope();selectedSystem='';switchView('reports');});
@@ -60,6 +62,9 @@
       if (version !== revision) { setTimeout(refresh,0); return; }
       if (cloud && search !== $('#search').value.trim()) { setTimeout(refresh,0); return; }
       projects=payload.projects || [];
+      if(cloud) isPrimary=payload.account?.isPrimary===true;
+      if(selectedSystem && !projects.some(project=>project.id===selectedSystem)) selectedSystem='';
+      if(detailProject && !projects.some(project=>project.id===detailProject)) {$('#detail').close();$('#detail-content').replaceChildren();detailProject=null;}
       window.CentralNotifications?.setProjects(projects);
       for (const project of projects) names[project.id] = project.name;
       const next = JSON.stringify([payload.reports,payload.stats,projects]); stats = payload.stats || [];
@@ -124,6 +129,7 @@
       section.append(board); list.append(section);
     }
     renderRegistry();
+    $('#delete-old').hidden=cloud && !projects.some(project=>project.canManage);
   }
   const companyName=id=>projects.find(project=>project.id===id)?.company || systemName(id);
   function occurrenceCard(item) {
@@ -145,7 +151,7 @@
     resolve.disabled=item.status==='resolvido'; resolve.setAttribute('aria-label',`${resolve.disabled?'Ocorrência resolvida':'Resolver ocorrência'}: ${report.title}`);
     resolve.onclick=async()=>{resolve.disabled=true;resolve.textContent='Salvando…';try{await saveStatus(item.key,'resolvido');showError('');$('#sync').textContent='Ocorrência marcada como resolvida.';}catch{resolve.disabled=false;resolve.textContent='Resolver';showError('Não foi possível resolver esta ocorrência. Tente novamente.');}};
     const remove=element('button','Apagar','button danger'); remove.setAttribute('aria-label',`Apagar ocorrência: ${report.title}`);
-    remove.onclick=()=>deleteOne(item,remove); actions.append(resolve,remove); wrapper.append(row,actions); return wrapper;
+    remove.onclick=()=>deleteOne(item,remove); actions.append(resolve); if(canManage(report.projectId)) actions.append(remove); wrapper.append(row,actions); return wrapper;
   }
 
   async function openDetail(key) {
@@ -156,11 +162,12 @@
       catch (error) { if (current === epoch) showError(error.message); return; }
     }
     const report = item.report, container = $('#detail-content'); container.replaceChildren();
+    detailProject=report.projectId;
     const title = element('h2', report.title); title.id = 'detail-title';
     const meta = element('div', undefined, 'detail-meta');
     meta.append(element('span', types[report.type], `badge ${report.type}`), element('span', systemName(report.projectId)), element('span', `Recebido em ${date(item.receivedAt)}`));
     container.append(meta, title);
-    const remove=element('button','Apagar ocorrência e anexos','button danger'); remove.onclick=()=>deleteOne(item,remove); container.append(remove);
+    const remove=element('button','Apagar ocorrência e anexos','button danger'); remove.onclick=()=>deleteOne(item,remove); if(canManage(report.projectId)) container.append(remove);
     if (item.recoveryNote) container.append(element('p', item.recoveryNote, 'detail-note'));
     const statusRow = element('div', undefined, 'detail-status'), label = element('label', 'Status da ocorrência'), select = element('select');
     select.id = 'occurrence-status'; label.htmlFor = select.id;
@@ -217,6 +224,9 @@
       const card=element('article',undefined,'registry-card'), heading=element('div',undefined,'group-head');
       heading.append(element('h2',project.name),element('span',project.disconnected ? 'Desconectado' : project.restricted ? project.connectedAt ? 'Conectado' : 'Aguardando integração' : 'Integração anterior','badge'));
       card.append(heading,element('p',project.company || project.name,'muted'));
+      if(project.canManage===false) card.append(element('p','Compartilhado com você para supervisão: acompanhe os relatos e atualize os status.','muted'));
+      else if(project.ownerId===accountId) card.append(element('p','Seu sistema','muted'));
+      if(project.supervisorIds?.length) card.append(element('p',`Supervisão compartilhada com ${project.supervisorIds.length} conta(s).`,'muted'));
       const accounts=element('ul',undefined,'authorized-accounts');
       for (const account of project.allowedEmails || []) accounts.append(element('li',account));
       if(project.allAccounts) card.append(element('strong','Todas as contas autenticadas do sistema'));
@@ -232,7 +242,7 @@
       const edit=element('button',project.disconnected?'Configurar nova conexão':'Editar contas e integração','button'); edit.setAttribute('aria-label',`Editar sistema: ${project.name}`); edit.onclick=()=>systemForm(project); edit.disabled=deleting || preview;
       const disconnect=element('button','Desconectar do sistema','button'); disconnect.setAttribute('aria-label',`Desconectar sistema: ${project.name}`); disconnect.disabled=project.disconnected || deleting || preview; disconnect.onclick=()=>confirmSystemAction(project,'disconnect');
       const remove=element('button','Deletar sistema','button danger'); remove.setAttribute('aria-label',`Deletar sistema: ${project.name}`); remove.disabled=deleting || preview; remove.onclick=()=>confirmSystemAction(project,'delete');
-      actions.append(edit,disconnect,remove); card.append(actions); list.append(card);
+      if(project.canManage!==false) {actions.append(edit,disconnect,remove); card.append(actions);} list.append(card);
     }
     $('#new-system').disabled=preview || deleting;
   }
@@ -278,11 +288,22 @@
     $('#system-account-fields').hidden=all; $('#system-emails').required=!all; $('#system-emails').disabled=all;
   }
   $('#system-scope').onchange=accountScope;
-  function systemForm(project=null) {
+  async function systemForm(project=null) {
+    const current=epoch;
+    try {
+      supervisorAccounts=cloud && isPrimary ? (await api('/api/reports?members=1')).accounts : [];
+      if(current!==epoch) return;
+    } catch(error) {if(current===epoch)showError(error.message);return;}
     editingSystem=project; const form=$('#system-form'); form.reset();
     form.elements.company.value=project?.company || project?.name || ''; form.elements.name.value=project?.name || '';
     form.elements.emails.value=(project?.allowedEmails || []).join('\n'); form.elements.origins.value=(project?.origins || []).join('\n');
     form.elements.scope.value=project?.allAccounts?'all':'specific'; accountScope();
+    $('#system-supervision').hidden=!cloud || !isPrimary; const options=$('#system-supervisors'); options.replaceChildren();
+    for(const account of supervisorAccounts) {
+      const label=element('label',undefined,'notification-option'),input=element('input'); input.type='checkbox'; input.value=account.id; input.checked=project?.supervisorIds?.includes(account.id) || false;
+      label.append(input,element('span',account.email));options.append(label);
+    }
+    if(!supervisorAccounts.length) options.append(element('p','Nenhuma outra conta cadastrada para supervisão.','muted'));
     $('#system-dialog-title').textContent=project?'Editar sistema':'Cadastrar sistema'; $('.rotate-id').hidden=!project?.restricted;
     $('#system-warning').hidden=!project || project.restricted; $('#system-error').textContent='';
     $('#save-system').textContent=project?'Salvar alterações':'Salvar e gerar ID'; $('#save-system').disabled=false; $('#system-dialog').showModal();
@@ -292,6 +313,7 @@
     const lines=value=>value.split(/[\n,;]+/).map(item=>item.trim()).filter(Boolean);
     const allAccounts=form.elements.scope.value==='all';
     const input={name:form.elements.name.value,company:form.elements.company.value,allAccounts,allowedEmails:allAccounts?[]:lines(form.elements.emails.value),origins:lines(form.elements.origins.value),...(id?{id,rotateId:$('#rotate-id').checked}:{})};
+    if(cloud && isPrimary) input.supervisorIds=[...$('#system-supervisors').querySelectorAll('input:checked')].map(input=>input.value);
     $('#save-system').disabled=true; $('#system-error').textContent='';
     try {
       const saved=await api('/api/reports?systems=1',{method:id?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
@@ -323,7 +345,7 @@
   function deleteOptions() {
     const list=$('#delete-options'); list.replaceChildren();
     const before=$('#delete-before').value;
-    const candidates=deletionRecords.filter(item=>item.status==='resolvido' && (!selectedSystem || item.report.projectId===selectedSystem) && before && new Date(item.receivedAt)<new Date(before+'T00:00:00'));
+    const candidates=deletionRecords.filter(item=>canManage(item.report.projectId) && item.status==='resolvido' && (!selectedSystem || item.report.projectId===selectedSystem) && before && new Date(item.receivedAt)<new Date(before+'T00:00:00'));
     for (const item of candidates) {
       const label=element('label',undefined,'delete-option'), input=element('input'); input.type='checkbox'; input.value=item.key; input.checked=true;
       label.append(input,element('span',`${item.report.title} · ${systemName(item.report.projectId)} · ${date(item.receivedAt)}`)); list.append(label);
@@ -374,15 +396,17 @@
     showError('O painel foi publicado. Para receber e acompanhar relatos, falta conectar o armazenamento online e configurar o acesso.');
     return; // A prévia não inicia o widget nem faz requisições a uma API inexistente.
   }
-  function start(userId) {
+  function start(userId,account={}) {
     active = true;
+    accountId=userId; isPrimary=!cloud || account.isPrimary===true;
+    $('#admin-role').textContent=isPrimary?'Conta principal':'Seus sistemas e supervisões';
+    $('#open').hidden=cloud && !isPrimary;
     if(cloud)void window.CentralNotifications?.start({userId,api});
-    window.feedback = CentralBugs.init({ projectId: 'central-demo', endpoint: '/api/reports', ...(cloud ? {transport:'signed-upload'} : {}), successMessage: 'Relato salvo na Central! Ele aparecerá na caixa de entrada.' });
-    $('#open').onclick = () => feedback.open(); refresh();
+    if(isPrimary) {window.feedback = CentralBugs.init({ projectId: 'central-demo', endpoint: '/api/reports', ...(cloud ? {transport:'signed-upload'} : {}), successMessage: 'Relato salvo na Central! Ele aparecerá na caixa de entrada.' });$('#open').onclick = () => feedback.open();} refresh();
   }
   if (cloud) {
     $('.sidebar-footer').replaceChildren(element('span','Central online'),element('small','Relatos privados · Supabase'));
-    CentralCloud.start(start,() => { window.CentralNotifications?.reset();notificationScope=urlScope();active = false; loading = false; epoch++; fingerprint = ''; records = []; stats = []; projects=[]; for (const id of Object.keys(names)) if (!['central-demo','radar-contratual'].includes(id)) delete names[id]; selectedSystem = ''; $('#system-dialog').close(); $('#integration-dialog').close(); $('#delete-dialog').close(); $('#system-action-dialog').close(); systemAction=null; $('#access-id').textContent=''; $('#integration-instructions').textContent=''; deletionRecords=[]; revision++; $('#delete-before').disabled=false; $('#delete-old').disabled=false; switchView('reports'); window.feedback?.destroy(); window.feedback = undefined; $('#detail').close(); render(); showError(''); });
+    CentralCloud.start(start,() => { window.CentralNotifications?.reset();notificationScope=urlScope();active = false; loading = false; epoch++; isPrimary=false; accountId=null; supervisorAccounts=[]; detailProject=null; $('#admin-role').textContent=''; $('#system-supervisors').replaceChildren(); $('#detail-content').replaceChildren(); fingerprint = ''; records = []; stats = []; projects=[]; for (const id of Object.keys(names)) if (!['central-demo','radar-contratual'].includes(id)) delete names[id]; selectedSystem = ''; $('#system-dialog').close(); $('#integration-dialog').close(); $('#delete-dialog').close(); $('#system-action-dialog').close(); systemAction=null; $('#access-id').textContent=''; $('#integration-instructions').textContent=''; deletionRecords=[]; revision++; $('#delete-before').disabled=false; $('#delete-old').disabled=false; switchView('reports'); window.feedback?.destroy(); window.feedback = undefined; $('#detail').close(); render(); showError(''); });
   } else start();
   const timer = setInterval(() => { if (!document.hidden) refresh(); }, cloud ? 15000 : 3000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

@@ -140,3 +140,7 @@ Rollback: publicar novamente a versão anterior da Central; as novas colunas pod
 Antes de publicar esta versão numa instalação existente, execute [a migração de disponibilidade](supabase/migrations/20261014005611_optional_account_scope.sql). Ela adiciona `all_accounts` com padrão `false` e preserva as políticas dos sistemas atuais. Instalações novas já recebem essa coluna em `setup.sql`.
 
 Na Central de Sistemas, cadastre ou edite um sistema e escolha **Contas específicas** ou **Todas as contas do sistema**. Na segunda opção os e-mails são opcionais e não são armazenados como lista de autorização. A sessão autenticada, o ID secreto do servidor e os domínios continuam obrigatórios. Siga [o guia de integração](INTEGRACAO-PARA-IA.md) para ajustar eventuais filtros de conta existentes no SaaS.
+
+## Contas e supervisão (v0.11)
+
+Cada conta cadastra seus próprios sistemas. A conta principal administra todos e pode selecionar supervisores no cadastro ou na edição de um sistema. Supervisores acompanham bugs e alteram status; somente o dono e a conta principal podem apagar dados ou alterar a integração. Consulte [o guia de contas e supervisão](CONTAS-E-SUPERVISAO.md) para instalação, migração e permissões.
