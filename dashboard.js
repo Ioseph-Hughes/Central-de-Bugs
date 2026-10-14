@@ -75,16 +75,38 @@
         }
         $('#export-attachments').append(row); $('#export-attachments-section').hidden = false;
       }
-      progress('Carregando o gerador de PDF…'); await loadPDF(); if (!valid()) return;
-      const blob = await window.CentralReportPDF(item, {
-        type: types[item.report.type], status: states[item.status], company: companyName(item.report.projectId), system: systemName(item.report.projectId)
-      }, controller.signal, progress);
-      if (!valid()) return;
-      const slug = item.report.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'ocorrencia';
-      const filename = `${slug}-${key.slice(0, 8)}.pdf`;
-      $('#export-download').href = exportURL(blob); $('#export-download').download = filename;
-      $('#export-filename').textContent = filename; $('#export-result').hidden = false;
-      progress(item.attachments.some(file => file.unavailable) ? 'PDF gerado. Os anexos indisponíveis estão identificados no documento.' : 'PDF pronto para baixar e enviar.');
+      const fileEndpoint = `/api/reports/${key}?file=generated`;
+      progress('Consultando o PDF salvo…');
+      let saved = (await api(fileEndpoint)).file; if (!valid()) return;
+      if (!saved) {
+        progress('Carregando o gerador de PDF…'); await loadPDF(); if (!valid()) return;
+        const blob = await window.CentralReportPDF(item, {
+          type: types[item.report.type], status: states[item.status], company: companyName(item.report.projectId), system: systemName(item.report.projectId)
+        }, controller.signal, progress);
+        if (!valid()) return;
+        if (blob.size > 50 * 1024 * 1024) throw new Error('O PDF gerado excede 50 MB e não pôde ser salvo.');
+        progress('Salvando o PDF na ocorrência…');
+        if (cloud) {
+          const prepared = await api(fileEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'prepare' }) });
+          if (!valid()) return;
+          saved = prepared.file;
+          if (!saved) {
+            const response = await fetch(prepared.upload.url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: blob, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]) });
+            // Outro dispositivo pode ter salvo primeiro; manter o primeiro PDF sem sobrescrever.
+            if (!response.ok && response.status !== 409) throw new Error('Não foi possível salvar o PDF. Tente novamente.');
+            if (!valid()) return;
+            saved = (await api(fileEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'commit' }) })).file;
+          }
+        } else saved = (await api(fileEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: blob })).file;
+        if (!valid()) return;
+      }
+      progress('Carregando o PDF salvo…');
+      const response = await fetch(saved.url, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]) });
+      if (!response.ok) throw new Error('Não foi possível abrir o PDF salvo. Tente novamente.');
+      const blob = await response.blob(); if (!valid()) return;
+      $('#export-download').href = exportURL(blob); $('#export-download').download = saved.name;
+      $('#export-filename').textContent = saved.name + (saved.createdAt ? ` · Salvo em ${date(saved.createdAt)}` : ''); $('#export-result').hidden = false;
+      progress('PDF salvo na ocorrência. Ele continuará disponível ao abrir esta janela novamente.');
     } catch (error) {
       if (valid()) { progress(error.message || 'Não foi possível gerar o arquivo. Tente novamente.'); $('#export-retry').hidden = false; }
     }

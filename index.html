@@ -45,9 +45,9 @@
   <dialog id="detail" aria-labelledby="detail-title"><div class="detail-top"><span class="section-label">DETALHES DA OCORRÊNCIA</span><button id="close-detail" class="button" aria-label="Fechar detalhes">×</button></div><div id="detail-content"></div></dialog>
   <dialog id="export-dialog" aria-labelledby="export-title" aria-describedby="export-help">
     <div class="detail-top"><h2 id="export-title">Gerar arquivo</h2><button id="close-export" class="button" aria-label="Fechar geração de arquivo">×</button></div>
-    <p id="export-help" class="muted">O PDF reúne os dados da ocorrência e os prints ampliados. Baixe os demais arquivos separadamente abaixo e envie junto com o PDF.</p>
+    <p id="export-help" class="muted">O PDF reúne os dados da ocorrência e os prints ampliados e fica salvo para baixar depois. Ao abrir novamente, você acessa o mesmo arquivo. Baixe os demais anexos separadamente abaixo.</p>
     <p id="export-report-name"></p><p id="export-message" role="status" aria-live="polite"></p>
-    <div id="export-result" class="export-file" hidden><div><strong>Arquivo da ocorrência</strong><span id="export-filename" class="muted"></span></div><a id="export-download" class="button primary">Baixar PDF</a></div>
+    <div id="export-result" class="export-file" hidden><div><strong>Arquivo salvo da ocorrência</strong><span id="export-filename" class="muted"></span></div><a id="export-download" class="button primary">Baixar PDF</a></div>
     <button id="export-retry" class="button" hidden>Tentar gerar novamente</button>
     <section id="export-attachments-section" class="detail-section" hidden><h3>Arquivos à parte</h3><div id="export-attachments"></div></section>
   </dialog>

@@ -9,11 +9,11 @@ const pdf = require('./pdf-fixture.cjs');
 (async () => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'central-export-'));
   const artifacts = path.join(__dirname, '../artifacts/export'); await fs.mkdir(artifacts, { recursive: true });
-  const allowedOrigins = [], server = await createCentralServer({ dataDir, allowedOrigins });
+  const allowedOrigins = []; let server = await createCentralServer({ dataDir, allowedOrigins });
   let browser;
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-    const base = `http://127.0.0.1:${server.address().port}`;
+    let base = `http://127.0.0.1:${server.address().port}`;
     allowedOrigins.push(base);
     browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } }), errors = [], requests = [];
@@ -56,6 +56,7 @@ const pdf = require('./pdf-fixture.cjs');
     ], description);
     await submit('sem-anexos', []);
     await submit('so-pdf', [{ name: 'original.pdf', type: 'application/pdf', buffer: pdf }]);
+    const cancelKey = await submit('cancelado', [{ name: 'print-amplo.png', type: 'image/png', buffer: Buffer.from(images[0], 'base64') }]);
     await page.getByRole('button', { name: 'Atualizar', exact: false }).click();
     await page.getByRole('button', { name: 'Abrir ocorrência: Ocorrência com-anexos', exact: true }).click();
     assert.equal(requests.some(url => url.endsWith('/report-generator.bundle.js')), false);
@@ -75,12 +76,19 @@ const pdf = require('./pdf-fixture.cjs');
     await exportDialog.getByText(/Não foi possível carregar a imagem/).waitFor();
     assert.equal(await page.locator('#export-result').isVisible(), false);
     await page.unroute(`**/attachments/${key}/0`);
+    await page.route(`**/api/reports/${key}?file=generated`, route => route.request().method() === 'POST' ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Falha ao salvar PDF.' }) }) : route.continue());
+    await page.getByRole('button', { name: 'Tentar gerar novamente' }).click();
+    await exportDialog.getByText('Falha ao salvar PDF.', { exact: true }).waitFor();
+    assert.equal(await page.locator('#export-result').isVisible(), false);
+    await page.unroute(`**/api/reports/${key}?file=generated`);
     await page.getByRole('button', { name: 'Tentar gerar novamente' }).click();
     await page.getByRole('link', { name: 'Baixar PDF', exact: true }).waitFor();
     const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Baixar PDF', exact: true }).click()]);
     assert.match(download.suggestedFilename(), /^Ocorrencia-com-anexos-[a-f0-9]{8}\.pdf$/);
     await download.saveAs(path.join(artifacts, 'ocorrencia.pdf'));
-    assert.equal((await fs.readFile(path.join(artifacts, 'ocorrencia.pdf'))).subarray(0, 5).toString(), '%PDF-');
+    const generatedBytes = await fs.readFile(path.join(artifacts, 'ocorrencia.pdf'));
+    assert.equal(generatedBytes.subarray(0, 5).toString(), '%PDF-');
+    assert.deepEqual(await fs.readFile(path.join(dataDir, key, 'generated.pdf')), generatedBytes);
     assert.equal(await page.evaluate(() => window.injetado), undefined);
     await exportDialog.screenshot({ path: path.join(artifacts, 'janela-desktop.png') });
     for (const [name, bytes] of [['relatório.pdf', pdf], ['outro.pdf', Buffer.concat([pdf, Buffer.from('\n% segundo arquivo')])]]) {
@@ -90,13 +98,32 @@ const pdf = require('./pdf-fixture.cjs');
     await page.getByRole('button', { name: 'Fechar geração de arquivo' }).click();
     await page.waitForFunction(() => window.exportObjectURLs.size === 0);
     assert.equal(await page.locator('#export-download').getAttribute('href'), null);
+    // Reabrir, inclusive depois de atualizar o status, recupera os mesmos bytes sem gerar novamente.
+    await page.getByLabel('Status da ocorrência', { exact: true }).selectOption('resolvido');
+    await page.getByText('Status salvo.', { exact: true }).waitFor();
+    await page.evaluate(() => { window.CentralReportPDF = () => { throw new Error('O gerador não deve executar para um PDF salvo.'); }; });
+    await page.getByRole('button', { name: 'Gerar arquivo', exact: true }).click();
+    await page.getByRole('link', { name: 'Baixar PDF', exact: true }).waitFor();
+    const [reopened] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Baixar PDF', exact: true }).click()]);
+    assert.deepEqual(await fs.readFile(await reopened.path()), generatedBytes);
+    await page.getByRole('button', { name: 'Fechar geração de arquivo' }).click();
+    await page.getByRole('button', { name: 'Fechar detalhes' }).click();
+    await page.reload();
+    const requestIndex = requests.length;
+    await page.getByRole('button', { name: 'Abrir ocorrência: Ocorrência com-anexos', exact: true }).click();
+    await page.getByRole('button', { name: 'Gerar arquivo', exact: true }).click();
+    await page.getByRole('link', { name: 'Baixar PDF', exact: true }).waitFor();
+    assert.equal(requests.slice(requestIndex).some(url => url.endsWith('/report-generator.bundle.js')), false);
+    await page.getByRole('button', { name: 'Fechar geração de arquivo' }).click();
+    await page.getByRole('button', { name: 'Fechar detalhes' }).click();
     // Cancelar no meio da geração não publica resultado depois que a janela fecha.
     let release; const pending = new Promise(resolve => { release = resolve; });
-    await page.route(`**/attachments/${key}/0`, async route => { await pending; await route.fulfill({ status: 503, body: '' }).catch(() => {}); });
+    await page.route(`**/attachments/${cancelKey}/0`, async route => { await pending; await route.fulfill({ status: 503, body: '' }).catch(() => {}); });
+    await page.getByRole('button', { name: 'Abrir ocorrência: Ocorrência cancelado', exact: true }).click();
     await page.getByRole('button', { name: 'Gerar arquivo', exact: true }).click();
     await exportDialog.getByText('Incluindo imagem: print-amplo.png', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Fechar geração de arquivo' }).click(); release();
-    await page.unroute(`**/attachments/${key}/0`);
+    await page.unroute(`**/attachments/${cancelKey}/0`);
     await page.getByRole('button', { name: 'Fechar detalhes' }).click();
     await page.setViewportSize({ width: 390, height: 844 });
     for (const id of ['sem-anexos', 'so-pdf']) {
@@ -111,7 +138,19 @@ const pdf = require('./pdf-fixture.cjs');
       await page.getByRole('button', { name: 'Fechar detalhes' }).click();
     }
     await page.waitForFunction(() => window.exportObjectURLs.size === 0);
+    const invalid = await fetch(base + `/api/reports/${cancelKey}?file=generated`, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: 'fake PDF' });
+    assert.equal(invalid.status, 400);
+    const same = await fetch(base + `/api/reports/${key}?file=generated`, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: pdf });
+    assert.equal(same.status, 200); assert.deepEqual(await fs.readFile(path.join(dataDir, key, 'generated.pdf')), generatedBytes);
+    // Reiniciar o servidor mantém o PDF; excluir a ocorrência remove também o arquivo gerado.
+    await new Promise(resolve => server.close(resolve)); server = await createCentralServer({ dataDir, allowedOrigins });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); base = `http://127.0.0.1:${server.address().port}`; allowedOrigins.push(base);
+    const saved = (await (await fetch(base + `/api/reports/${key}?file=generated`)).json()).file;
+    assert.deepEqual(Buffer.from(await (await fetch(base + saved.url)).arrayBuffer()), generatedBytes);
+    assert.equal((await fetch(base + `/api/reports/${key}`, { method: 'DELETE' })).status, 200);
+    assert.equal((await fetch(base + saved.url)).status, 404);
+    await assert.rejects(fs.stat(path.join(dataDir, key, 'generated.pdf')), { code: 'ENOENT' });
     assert.deepEqual(errors, []);
-    console.log('OK: PDF real com texto longo e prints amplo/comprido, download binário de vários originais, falhas/retentativa, cancelamento, limpeza, sem anexos, somente PDF, celular e carregamento sob demanda.');
+    console.log('OK: PDF salvo, mesmos bytes após reabrir/atualizar status/recarregar/reiniciar, exclusão conjunta, geração com prints, originais separados, falhas/retentativa, cancelamento e celular.');
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); await fs.rm(dataDir, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
