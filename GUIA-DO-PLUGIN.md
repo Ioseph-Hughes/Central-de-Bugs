@@ -24,10 +24,10 @@ A Central online está em [central-de-bugs.vercel.app](https://central-de-bugs.v
 1. Abra **Dar feedback** no SaaS.
 2. Escolha **Relatar um bug**, **Sugerir uma melhoria** ou **Pedir um ajuste**.
 3. Escreva um título e explique o que aconteceu. Para um bug, inclua o resultado esperado e como repetir o problema.
-4. Anexe imagens, cole prints no formulário ou use uma das opções de captura abaixo.
+4. Clique em **Adicionar arquivos** para anexar imagens ou PDFs, cole prints no formulário ou use uma das opções de captura abaixo.
 5. Revise e clique em **Enviar relato**. Aguarde a confirmação do recebimento.
 
-É possível anexar várias imagens e escrever textos longos. O formulário não impõe limite de caracteres ou quantidade de anexos; os limites do navegador e do serviço de armazenamento continuam valendo. Os limites da versão online estão em [DEPLOY.md](DEPLOY.md).
+É possível anexar imagens e PDFs no mesmo relato e escrever textos longos. Clique no indicador **PDF** para abrir um documento antes de enviar. Nos detalhes da ocorrência, PDFs aparecem como **PDF · Abrir arquivo**. O formulário não impõe limite de caracteres ou quantidade de anexos; a versão online aceita até 50 MB por arquivo. Os outros limites estão em [DEPLOY.md](DEPLOY.md).
 
 Fechar o formulário ou cancelar uma captura mantém o rascunho e os anexos enquanto a página continua aberta. Uma falha no envio também mantém essas informações para tentar novamente. Recarregar ou sair da página descarta o rascunho; após um envio confirmado, o formulário é limpo.
 
@@ -79,7 +79,7 @@ A posição e o estado recolhido ficam salvos naquele navegador, separadamente p
 Cada ocorrência identifica o sistema e o tipo de relato. Nos detalhes, a equipe encontra:
 
 - Título e descrição completos.
-- Imagens anexadas e links enviados pelo usuário.
+- Imagens, PDFs anexados e links enviados pelo usuário.
 - Data e hora do relato.
 - URL e título da página de origem, idioma e dimensões da janela.
 - Dados de identificação do usuário, quando o SaaS os fornece na integração.

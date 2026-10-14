@@ -4,7 +4,7 @@ Este arquivo é o contrato de integração da versão 0.10. Leia-o antes de alte
 
 ## 1. Objetivo e informações recebidas
 
-A Central reúne bugs, melhorias e ajustes dos sistemas de uma empresa. O widget permite escrever relatos, anexar várias imagens, capturar a tela inteira ou recortar uma área. O painel mantém quatro etapas por empresa: **Bugs novos → Em análise → Em processamento → Terminados**.
+A Central reúne bugs, melhorias e ajustes dos sistemas de uma empresa. O widget permite escrever relatos, anexar imagens e PDFs, capturar a tela inteira ou recortar uma área. A versão online aceita até 50 MB por arquivo. O painel mantém quatro etapas por empresa: **Bugs novos → Em análise → Em processamento → Terminados**.
 
 Você receberá:
 
@@ -148,7 +148,7 @@ Se houver CSP, autorize a Central em `script-src` e `connect-src`, e o domínio 
 2. Em **Contas específicas**, entre em uma conta cadastrada: o widget deve aparecer uma vez; uma conta fora da lista deve ser recusada. Em **Todas as contas**, confira duas contas autenticadas diferentes, ambas com o widget.
 3. Em ambos os modos, visitantes sem sessão não podem receber autorização; um envio direto sem ticket deve retornar 403. Confira também que outro domínio não é aceito.
 4. Saia da conta permitida: o botão e qualquer formulário aberto devem desaparecer.
-5. Envie um relato com texto e duas imagens; confira na Central a empresa e o sistema corretos.
+5. Envie um relato com texto, imagens e um PDF; confira na Central a empresa e o sistema corretos e abra o PDF pelos detalhes da ocorrência.
 6. Avance pelas quatro etapas, recarregue e confirme a persistência.
 7. Na **Central de Sistemas**, o cadastro passa a indicar **Conectado** depois da primeira autorização válida. Essa indicação confirma a troca entre servidores; o envio de teste confirma o funcionamento completo.
 8. Altere de todas as contas para contas específicas e confira que a próxima autorização/envio de uma conta fora da lista é recusada. Não é necessário trocar o ID para mudar a disponibilidade.

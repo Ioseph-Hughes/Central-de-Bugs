@@ -1,8 +1,10 @@
-# Central de Bugs · v0.9
+# Central de Bugs · v0.12
 
 **Para integrar um sistema novo com ID e contas autorizadas, siga [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md).** Os exemplos de `init` e instalação por tag abaixo são do modo local/legado e não substituem a autenticação exigida pelos novos cadastros.
 
 Widget de feedback reutilizável, sem instalação de pacotes ou etapa de build no SaaS. A interface fica em um Shadow DOM para isolar seus estilos. A captura mobile usa um renderizador local carregado somente quando solicitado.
+
+O formulário aceita imagens e **PDFs** juntos em **Adicionar arquivos**. PDFs têm um link para abrir antes do envio e nos detalhes da ocorrência. Na Central online, cada anexo pode ter até **50 MB**; os arquivos permanecem privados. Instalações existentes precisam aplicar [a migração de PDFs](supabase/migrations/20261014025612_pdf_attachments.sql) antes de publicar a versão 0.12. A migração acrescenta o tipo PDF ao bucket sem mudar sua visibilidade, limite ou arquivos existentes.
 
 Para entender o propósito, o fluxo de uso e como compartilhar a integração, leia [GUIA-DO-PLUGIN.md](GUIA-DO-PLUGIN.md).
 
@@ -94,7 +96,7 @@ const feedback = CentralBugs.init({
 ## Recursos desta versão
 
 - Bug, melhoria ou ajuste; título, texto livre e múltiplos links HTTP/HTTPS.
-- Múltiplas imagens PNG, JPEG, WebP, GIF e AVIF, com prévia e remoção.
+- Múltiplas imagens PNG, JPEG, WebP, GIF e AVIF e arquivos PDF, com prévia/abertura e remoção.
 - Upload, colagem de prints e duas opções lado a lado: **Selecionar área** ou **Tela inteira**. A seleção abre uma prévia para arrastar o recorte ou ajustar suas medidas por teclado; somente o PNG recortado é anexado. Cancelar mantém o rascunho. O compartilhamento termina antes da edição.
 - No Chrome Android e em outros navegadores sem `getDisplayMedia`, **Capturar página** gera uma imagem da parte visível do SaaS, incluindo a posição de rolagem. **Selecionar área** permite recortá-la por toque. O widget, campos de senha e elementos com `data-central-bugs-private` ficam fora dessa imagem. O PNG é revisado e enviado pelo mesmo fluxo dos outros anexos.
 - Arraste o botão pela alça ou pelo próprio texto. Solte junto a uma borda (até 32 px) para recolher; solte no interior para mantê-lo expandido.
@@ -175,11 +177,11 @@ Os testes iniciam e encerram seus próprios servidores locais. `tests/build.cjs`
 - `GET/POST/PATCH /api/reports?systems=1`: consulta, cadastra e edita os sistemas (administrador).
 - `POST /api/reports?widget=access`: troca o ID de integração e a identidade confirmada pelo servidor do SaaS por autorização temporária.
 - `PATCH /api/reports/:key`: altera o status com JSON, por exemplo `{"status":"em-correcao"}`.
-- `GET /attachments/:key/:indice`: disponibiliza a imagem armazenada.
+- `GET /attachments/:key/:indice`: disponibiliza a imagem ou o PDF armazenado.
 
-O caminho da imagem é retornado pelo receptor; nomes de arquivos enviados não são usados como caminhos no disco. O receptor grava arquivos temporários e publica o registro por renomeação antes de responder. A implementação local usa um único processo/fila de escrita; para múltiplos processos, substitua o armazenamento por um banco transacional.
+O caminho do anexo é retornado pelo receptor; nomes de arquivos enviados não são usados como caminhos no disco. O receptor grava arquivos temporários e publica o registro por renomeação antes de responder. A implementação local usa um único processo/fila de escrita; para múltiplos processos, substitua o armazenamento por um banco transacional.
 
-O teste `tests/cloud.cjs` usa o SDK oficial e um serviço simulado localmente para verificar login, restrição administrativa, CORS por sistema, duas imagens, confirmação com falha e retentativa, detalhes privados, busca completa, Resolver e saída da sessão. Não acessa o projeto Supabase real. `tests/build.cjs` também verifica o build com login e ausência de chave secreta nos arquivos públicos.
+O teste `tests/cloud.cjs` usa o SDK oficial e um serviço simulado localmente para verificar login, restrição administrativa, CORS por sistema, imagens e PDF no mesmo relato, assinatura/tamanho dos arquivos, confirmação com falha e retentativa, detalhes privados, busca completa, Resolver e saída da sessão. Não acessa o projeto Supabase real. `tests/build.cjs` também verifica o build com login e ausência de chave secreta nos arquivos públicos.
 
 Para conferir o SQL em PostgreSQL embarcado, sem serviços remotos:
 

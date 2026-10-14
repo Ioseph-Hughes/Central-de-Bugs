@@ -12,6 +12,14 @@ const { PGlite } = require(process.env.PGLITE_PATH || '@electric-sql/pglite');
     await db.exec('create schema auth; create table auth.users(id uuid primary key,email text); create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create role anon; create role authenticated; create role service_role bypassrls;');
     const sql = await fs.readFile(path.join(__dirname,'../supabase/setup.sql'),'utf8');
     await db.exec(sql); await db.exec(sql);
+    const bucket = (await db.query("select * from storage.buckets where id='central-attachments'")).rows[0];
+    assert.ok(bucket.allowed_mime_types.includes('application/pdf'));
+    await db.query("update storage.buckets set allowed_mime_types=array['image/png','image/bmp'] where id='central-attachments'");
+    const pdfMigration = await fs.readFile(path.join(__dirname,'../supabase/migrations/20261014025612_pdf_attachments.sql'),'utf8');
+    await db.exec(pdfMigration); await db.exec(pdfMigration);
+    const migratedBucket = (await db.query("select * from storage.buckets where id='central-attachments'")).rows[0];
+    assert.deepEqual(migratedBucket.allowed_mime_types,['image/png','image/bmp','application/pdf']);
+    assert.equal(migratedBucket.public,false); assert.equal(migratedBucket.file_size_limit,bucket.file_size_limit);
     // Simular a estrutura 0.5 para testar a migração isolada, mantendo um cadastro antigo.
     await db.exec('alter table public.central_projects drop column company, drop column allowed_emails, drop column restricted, drop column access_hash, drop column connected_at, drop column all_accounts;');
     await db.query("insert into public.central_projects(id,name,origins) values('prior','Cadastro anterior',array['https://anterior.example'])");

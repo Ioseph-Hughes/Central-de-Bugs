@@ -4,7 +4,10 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { chromium } = require('playwright');
-const { createCentralServer } = require('../server.cjs');
+const { createCentralServer, validAttachment } = require('../server.cjs');
+const pdf = require('./pdf-fixture.cjs');
+assert.equal(validAttachment(pdf,'application/pdf'),true);
+assert.equal(validAttachment(Buffer.from([0xa5,0xd0,0xc4,0xc6,0xad]),'application/pdf'),false);
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`)));
 const close = server => new Promise(resolve => server.close(resolve));
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
@@ -36,7 +39,8 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
       await widget.getByLabel('Título', { exact: true }).fill(title);
       await widget.locator('textarea[name=description]').fill(text);
       await widget.locator('input[type=file]').setInputFiles([
-        { name: 'print.png', mimeType: 'image/png', buffer: png }, { name: 'outro.png', mimeType: 'image/png', buffer: png }
+        { name: 'print.png', mimeType: 'image/png', buffer: png }, { name: 'outro.png', mimeType: 'image/png', buffer: png },
+        { name: 'relatorio.pdf', mimeType: 'application/pdf', buffer: pdf }
       ]);
       await widget.getByRole('button', { name: 'Enviar relato' }).click();
       await widget.locator('.status').filter({ hasText: 'Relato enviado' }).waitFor();
@@ -55,6 +59,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal(await dashboard.locator('.description').textContent(), description);
     assert.equal(await dashboard.evaluate(() => window.injetado), undefined);
     assert.equal(await dashboard.locator('.gallery img').count(), 2);
+    assert.equal(await dashboard.getByRole('link',{name:'Abrir PDF: relatorio.pdf',exact:true}).count(),1);
     await dashboard.locator('.gallery img').first().scrollIntoViewIfNeeded();
     await dashboard.waitForFunction(() => [...document.querySelectorAll('.gallery img')].every(img => img.complete && img.naturalWidth > 0), null, {timeout:10000});
     assert.equal(await dashboard.locator('.detail-links a').count(), 0);
@@ -105,7 +110,10 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     const saved = received.find(item => item.report.title === 'Falha ao salvar');
     const image = await fetch(central + saved.attachments[0].url);
     assert.deepEqual(Buffer.from(await image.arrayBuffer()), png);
-    function form() { const body = new FormData(); body.append('report', JSON.stringify(saved.report)); for (const file of saved.attachments) body.append('attachments', new Blob([png], { type: file.type }), file.name); return body; }
+    const pdfResponse=await fetch(central+saved.attachments[2].url);
+    assert.equal(pdfResponse.headers.get('content-type'),'application/pdf');
+    assert.deepEqual(Buffer.from(await pdfResponse.arrayBuffer()),pdf);
+    function form() { const body = new FormData(); body.append('report', JSON.stringify(saved.report)); for (const file of saved.attachments) body.append('attachments', new Blob([file.type==='application/pdf'?pdf:png], { type: file.type }), file.name); return body; }
     const retries = await Promise.all([fetch(`${central}/reports`, { method: 'POST', body: form() }), fetch(`${central}/reports`, { method: 'POST', body: form() })]);
     assert.ok(retries.every(response => response.status === 201));
     assert.equal((await (await fetch(`${central}/api/reports`)).json()).reports.length, 3);
@@ -113,6 +121,8 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await fetch(`${central}/reports`, { method: 'POST', body: 'inválido' })).status, 400);
     const invalidImage = new FormData(); invalidImage.append('report', JSON.stringify({ ...saved.report, id: 'invalid-image', attachments: [{}] })); invalidImage.append('attachments', new Blob(['not an image'], { type: 'image/png' }), 'fake.png');
     assert.equal((await fetch(`${central}/reports`, { method: 'POST', body: invalidImage })).status, 400);
+    const invalidPDF = new FormData(); invalidPDF.append('report',JSON.stringify({...saved.report,id:'invalid-pdf',attachments:[{}]})); invalidPDF.append('attachments',new Blob(['not a PDF'],{type:'application/pdf'}),'fake.pdf');
+    assert.equal((await fetch(`${central}/reports`,{method:'POST',body:invalidPDF})).status,400);
     assert.equal((await fetch(`${central}/api/reports/${saved.key}`, { method: 'PATCH', body: '{"status":"fake"}' })).status, 400);
     assert.equal((await fetch(`${central}/data`)).status, 404);
     // Reinício real: todos os relatos, imagens e status continuam disponíveis.
@@ -125,6 +135,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal(afterRestart.find(item => item.key === saved.key).status, 'em-correcao');
     assert.equal(afterRestart.find(item => item.report.title === 'Incluir busca por contrato').status, 'resolvido');
     assert.deepEqual(Buffer.from(await (await fetch(central + saved.attachments[0].url)).arrayBuffer()), png);
+    assert.deepEqual(Buffer.from(await (await fetch(central + saved.attachments[2].url)).arrayBuffer()), pdf);
     await dashboard.setViewportSize({ width: 390, height: 844 });
     assert.equal(await dashboard.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await dashboard.locator('.occurrence').filter({ hasText: 'Falha ao salvar' }).click();
