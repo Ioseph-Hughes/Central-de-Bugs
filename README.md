@@ -189,9 +189,9 @@ PGLITE_PATH=/tmp/central-sql-check/node_modules/@electric-sql/pglite node tests/
 ```
 
 
-## Cadastro de sistemas e contas autorizadas (v0.7)
+## Cadastro de sistemas e disponibilidade (v0.10)
 
-A Central de Sistemas cadastra empresa, sistema e uma ou várias contas principais. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.
+A Central de Sistemas cadastra empresa e sistema. Em **Quem pode usar o plugin?**, escolha **Contas específicas** (uma ou várias contas principais) ou **Todas as contas do sistema** (sem cadastrar e-mails, com sessão autenticada obrigatória). As opções anteriores são preservadas. Filtros de conta no código do SaaS precisam ser ajustados nesse projeto para respeitar essa escolha. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.
 
 A **Central de Sistemas** também permite desconectar um sistema preservando o histórico, ou excluir seu cadastro com todos os relatos e anexos. As duas ações exigem confirmação com Sim/Não. [Guia de desconexão e remoção do código](INTEGRACAO-PARA-IA.md#desconectar-ou-excluir-um-sistema).
 

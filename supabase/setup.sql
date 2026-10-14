@@ -3,9 +3,10 @@ begin;
 create table if not exists public.central_projects (
   id text primary key, name text not null, origins text[] not null default '{}',
   company text, allowed_emails text[] not null default '{}', restricted boolean not null default false,
-  access_hash text, connected_at timestamptz
+  all_accounts boolean not null default false, access_hash text, connected_at timestamptz
 );
 -- Compatibilidade ao executar setup sobre uma instalação anterior.
+alter table public.central_projects add column if not exists all_accounts boolean not null default false;
 alter table public.central_projects add column if not exists company text;
 alter table public.central_projects add column if not exists allowed_emails text[] not null default '{}';
 alter table public.central_projects add column if not exists restricted boolean not null default false;

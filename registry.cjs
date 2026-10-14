@@ -3,6 +3,7 @@ const { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } = req
 const fail = (status,message) => Object.assign(new Error(message),{status});
 const hash = value => createHash('sha256').update(value).digest('hex');
 const email = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
+const validEmail = value => email(value).length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email(value));
 function origin(value) {
   try {
     const url = new URL(value);
@@ -11,26 +12,28 @@ function origin(value) {
   } catch { throw fail(400,'Informe um domínio HTTPS completo, sem caminho. HTTP é permitido somente em localhost.'); }
 }
 function fields(input) {
+  const allAccounts=input?.allAccounts === true;
+  const accounts=input?.allowedEmails ?? (allAccounts ? [] : null);
   if (!input || !['name','company'].every(key => typeof input[key] === 'string' && input[key].trim() && input[key].trim().length <= 150) ||
-    !Array.isArray(input.allowedEmails) || !input.allowedEmails.length || input.allowedEmails.length > 100 ||
-    !input.allowedEmails.every(value => email(value).length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email(value))) ||
-    !Array.isArray(input.origins) || input.origins.length > 20) throw fail(400,'Informe empresa, sistema e pelo menos um e-mail válido (até 100 contas).');
-  return {name:input.name.trim(),company:input.company.trim(),allowed_emails:[...new Set(input.allowedEmails.map(email))],origins:[...new Set(input.origins.map(origin))],restricted:true};
+    (input.allAccounts !== undefined && typeof input.allAccounts !== 'boolean') ||
+    !Array.isArray(accounts) || (!allAccounts && !accounts.length) || accounts.length > 100 || !accounts.every(validEmail) ||
+    !Array.isArray(input.origins) || input.origins.length > 20) throw fail(400,'Informe empresa e sistema; escolha todas as contas ou cadastre de 1 a 100 e-mails válidos.');
+  return {name:input.name.trim(),company:input.company.trim(),allowed_emails:allAccounts ? [] : [...new Set(accounts.map(email))],all_accounts:allAccounts,origins:[...new Set(input.origins.map(origin))],restricted:true};
 }
 function credential() { const accessId = 'cb_' + randomBytes(32).toString('base64url'); return {accessId,access_hash:hash(accessId)}; }
 function create(input) { const {accessId,access_hash}=credential(); return {accessId,project:{id:'sys-'+randomUUID(),...fields(input),access_hash}}; }
 function publicProject(project) {
   return {id:project.id,name:project.name,company:project.company || project.name,origins:project.origins,
-    allowedEmails:project.allowed_emails || [],restricted:project.restricted === true,disconnected:!enabled(project),connectedAt:project.connected_at || null};
+    allowedEmails:project.allowed_emails || [],allAccounts:project.all_accounts === true,restricted:project.restricted === true,disconnected:!enabled(project),connectedAt:project.connected_at || null};
 }
 const enabled = project => !!project && (!project.restricted || !!project.access_hash);
 const disconnect = () => ({restricted:true,access_hash:null,connected_at:null});
 function accessInput(input) {
-  if (typeof input?.accessId !== 'string' || !/^cb_[\w-]{43}$/.test(input.accessId) || !email(input.email)) throw fail(403,'ID ou conta não autorizados.');
+  if (typeof input?.accessId !== 'string' || !/^cb_[\w-]{43}$/.test(input.accessId) || !validEmail(input.email)) throw fail(403,'ID ou conta não autorizados.');
   return {accessHash:hash(input.accessId),email:email(input.email),origin:origin(input.origin)};
 }
 function authorizeAccount(project, identity) {
-  if (!enabled(project) || !project.restricted || !project.allowed_emails.includes(identity.email)) throw fail(403,'Esta conta não está autorizada para este sistema.');
+  if (!enabled(project) || !project.restricted || !validEmail(identity?.email) || (project.all_accounts !== true && !project.allowed_emails.includes(identity.email))) throw fail(403,'Esta conta não está autorizada para este sistema.');
   if (project.origins.length && !project.origins.includes(identity.origin)) throw fail(403,'Este domínio não está cadastrado para o sistema.');
 }
 function ticket(project,identity,secret) {
