@@ -192,6 +192,56 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await restrictedPost({action:'commit',key:reserved.key,receipt:reserved.receipt},'')).status,403);
     assert.equal((await restrictedPost({action:'commit',key:reserved.key,receipt:reserved.receipt})).status,201);
     const adminHeaders={Authorization:'Bearer admin-token','Content-Type':'application/json'};
+    // A interface publica a opção explícita sem e-mails nem rotação do ID.
+    const originalHash=registered.access_hash;
+    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();
+    await page.getByLabel('Quem pode usar o plugin?',{exact:true}).selectOption('all');
+    await page.locator('#system-origins').fill(origin);
+    assert.equal(await page.locator('#system-emails').isVisible(),false);
+    assert.equal(await page.locator('#system-emails').evaluate(el=>el.required),false);
+    await page.getByRole('button',{name:'Salvar alterações',exact:true}).click();
+    await page.locator('#system-dialog').waitFor({state:'hidden'});
+    assert.equal(registered.all_accounts,true); assert.deepEqual(registered.allowed_emails,[]);
+    assert.equal(registered.access_hash,originalHash);
+    await page.getByText('Todas as contas autenticadas do sistema',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();
+    assert.equal(await page.locator('#system-scope').inputValue(),'all');
+    assert.equal(await page.locator('#system-emails').inputValue(),'');
+    await page.getByRole('button',{name:'Fechar cadastro'}).click();
+    for(const invalid of [undefined,'','sem-email']) assert.equal((await exchange(invalid)).status,403);
+    assert.equal((await fetch(origin+'/api/reports?widget=access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accessId,email:'outra@example.com',origin:'https://outro.example'})})).status,403);
+    const anyGrant=await (await exchange('outra@example.com')).json(); assert.equal(anyGrant.user.email,'outra@example.com');
+    const anyReport={...restrictedReport,id:'any-account-report'};
+    const anyPrepared=await (await restrictedPost({action:'prepare',report:anyReport},anyGrant.token)).json();
+    assert.equal(rows.get(anyPrepared.key).report.user.email,'outra@example.com');
+    assert.equal((await restrictedPost({action:'commit',key:anyPrepared.key,receipt:anyPrepared.receipt},anyGrant.token)).status,201);
+    assert.equal((await fetch(origin+'/api/reports/'+anyPrepared.key,{method:'DELETE',headers:adminHeaders})).status,200);
+    const pendingAny=await (await restrictedPost({action:'prepare',report:{...anyReport,id:'pending-any-account'}},anyGrant.token)).json();
+    await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();
+    await page.locator('#system-scope').selectOption('specific');
+    assert.equal(await page.locator('#system-emails').evaluate(el=>el.required),true);
+    await page.locator('#system-emails').fill('mae@example.com\nsegunda@example.com');
+    await page.getByRole('button',{name:'Salvar alterações',exact:true}).click();
+    await page.locator('#system-dialog').waitFor({state:'hidden'});
+    assert.equal(registered.all_accounts,false); assert.equal(registered.access_hash,originalHash);
+    assert.equal((await exchange('outra@example.com')).status,403);
+    assert.equal((await restrictedPost({action:'prepare',report:{...anyReport,id:'excluded-account'}},anyGrant.token)).status,403);
+    assert.equal((await restrictedPost({action:'commit',key:pendingAny.key,receipt:pendingAny.receipt},anyGrant.token)).status,403);
+    assert.equal(rows.get(pendingAny.key).ready,false); // Não virou ocorrência após perder a permissão.
+    rows.delete(pendingAny.key); // Limpeza do rascunho reservado no banco isolado do teste.
+    // Cadastro novo sem contas principais gera o mesmo contrato de integração.
+    await page.getByRole('button',{name:'Cadastrar sistema'}).click();
+    await page.getByLabel('Empresa',{exact:true}).fill('Empresa de teste');
+    await page.getByLabel('Nome do sistema',{exact:true}).fill('Sistema para todas as contas');
+    await page.locator('#system-scope').selectOption('all');
+    await page.getByRole('button',{name:'Salvar e gerar ID',exact:true}).click();
+    await page.locator('#integration-dialog').waitFor({state:'visible'});
+    const allProject=projects.find(p=>p.name==='Sistema para todas as contas');
+    assert.equal(allProject.all_accounts,true); assert.deepEqual(allProject.allowed_emails,[]); assert.equal(allProject.restricted,true);
+    assert.match(await page.locator('#access-id').innerText(),/^cb_[\w-]{43}$/);
+    assert.ok((await page.locator('#integration-instructions').innerText()).includes('Todas as contas autenticadas do sistema'));
+    await page.getByRole('button',{name:'Fechar integração'}).click();
+    assert.equal((await fetch(origin+'/api/reports?systems=1',{method:'DELETE',headers:adminHeaders,body:JSON.stringify({id:allProject.id,action:'delete'})})).status,200);
     for (const [index,status] of ['em-analise','em-correcao','resolvido'].entries()) {
       const sample={...restrictedReport,id:'stage-'+index,title:['Revisar cálculo dos valores','Corrigir filtro de contratos','Atualizar mensagem de confirmação'][index],description:'Relato de teste para conferir a organização das etapas.'};
       const prepared=await (await restrictedPost({action:'prepare',report:sample})).json();
@@ -283,7 +333,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await post({action:'commit',key:prepared.key,receipt:'0'.repeat(64)})).status,403);
     assert.equal((await post({action:'prepare',report:{...report,projectId:'radar-contratual'}})).status,403);
     assert.equal((await fetch(origin+'/api/reports/'+[...rows.keys()][0],{method:'PATCH',headers:{Origin:origin,'Content-Type':'application/json'},body:'{"status":"resolvido"}'})).status,401);
-    console.log('OK: login/admin, CORS, upload/retry, detalhes/busca, quatro etapas, cadastro/edição, múltiplas contas, ID secreto/rotação, origem e conta verificadas, exclusão completa e recuperação de falha do Storage, cancelamento Sim/Não, desconexão, exclusão de sistema com mais de 200 registros/pendências e isolamento.');
+    console.log('OK: login/admin, CORS, upload/retry, detalhes/busca, quatro etapas, cadastro/edição, contas específicas/todas autenticadas, revogação entre modos, múltiplas contas, ID secreto/rotação, origem e conta verificadas, exclusão completa e recuperação de falha do Storage, cancelamento Sim/Não, desconexão, exclusão de sistema com mais de 200 registros/pendências e isolamento.');
   } catch(error) {const page=browser?.contexts()[0]?.pages()[0];if(page)console.error(await page.evaluate(()=>({loginHidden:document.querySelector('#login-screen')?.hidden,workspaceHidden:document.querySelector('#workspace')?.hidden,notifications:document.querySelector('#notifications-message')?.textContent})));throw error;}
   finally { await browser?.close(); await new Promise(resolve=>server.close(resolve)); await fs.rm(output,{recursive:true,force:true}); }
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -134,3 +134,9 @@ Referências: [chaves do Supabase](https://supabase.com/docs/guides/getting-star
 5. Confira contas permitidas, bloqueadas, logout, envio com imagens e recebimento nos quatro blocos. As instalações antigas continuam funcionando até a migração de seu cadastro.
 
 Rollback: publicar novamente a versão anterior da Central; as novas colunas podem permanecer. Se um SaaS ainda usar o fluxo antigo e seu cadastro tiver sido ativado como restrito, volte esse registro para `restricted=false` somente como rollback consciente (a restrição volta a depender do código do SaaS). Não desative as verificações de conta para resolver erros de integração.
+
+## Disponibilidade para todas as contas (v0.10)
+
+Antes de publicar esta versão numa instalação existente, execute [a migração de disponibilidade](supabase/migrations/20261014005611_optional_account_scope.sql). Ela adiciona `all_accounts` com padrão `false` e preserva as políticas dos sistemas atuais. Instalações novas já recebem essa coluna em `setup.sql`.
+
+Na Central de Sistemas, cadastre ou edite um sistema e escolha **Contas específicas** ou **Todas as contas do sistema**. Na segunda opção os e-mails são opcionais e não são armazenados como lista de autorização. A sessão autenticada, o ID secreto do servidor e os domínios continuam obrigatórios. Siga [o guia de integração](INTEGRACAO-PARA-IA.md) para ajustar eventuais filtros de conta existentes no SaaS.

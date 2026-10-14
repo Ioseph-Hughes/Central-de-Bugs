@@ -13,24 +13,29 @@ const { PGlite } = require(process.env.PGLITE_PATH || '@electric-sql/pglite');
     const sql = await fs.readFile(path.join(__dirname,'../supabase/setup.sql'),'utf8');
     await db.exec(sql); await db.exec(sql);
     // Simular a estrutura 0.5 para testar a migração isolada, mantendo um cadastro antigo.
-    await db.exec('alter table public.central_projects drop column company, drop column allowed_emails, drop column restricted, drop column access_hash, drop column connected_at;');
+    await db.exec('alter table public.central_projects drop column company, drop column allowed_emails, drop column restricted, drop column access_hash, drop column connected_at, drop column all_accounts;');
     await db.query("insert into public.central_projects(id,name,origins) values('prior','Cadastro anterior',array['https://anterior.example'])");
     const migration=await fs.readFile(path.join(__dirname,'../supabase/migrations/006-systems.sql'),'utf8');
     await db.exec(migration); await db.exec(migration);
+    const scopeMigration=await fs.readFile(path.join(__dirname,'../supabase/migrations/20261014005611_optional_account_scope.sql'),'utf8');
+    await db.exec(scopeMigration); await db.exec(scopeMigration);
     const prior=(await db.query("select * from public.central_projects where id='prior'")).rows[0];
-    assert.equal(prior.name,'Cadastro anterior'); assert.deepEqual(prior.origins,['https://anterior.example']); assert.equal(prior.restricted,false);
+    assert.equal(prior.name,'Cadastro anterior'); assert.deepEqual(prior.origins,['https://anterior.example']); assert.equal(prior.restricted,false); assert.equal(prior.all_accounts,false);
     assert.equal((await db.query('select public from storage.buckets')).rows[0].public,false);
     for (const role of ['anon','authenticated']) {
       await db.exec(`set role ${role}`);
       await assert.rejects(db.query('select * from public.central_reports'),/permission denied/);
       await assert.rejects(db.query('select * from public.central_report_summaries'),/permission denied/);
       await assert.rejects(db.query('select * from public.central_admins'),/permission denied/);
-      await assert.rejects(db.query('select access_hash,allowed_emails from public.central_projects'),/permission denied/);
+      await assert.rejects(db.query('select access_hash,allowed_emails,all_accounts from public.central_projects'),/permission denied/);
       await assert.rejects(db.query("select * from public.central_reserve('a','central-demo','{}','[]','x','ip')"),/permission denied/);
       await db.exec('reset role');
     }
     await db.exec('set role service_role');
     await db.query("insert into public.central_projects(id,name,company,allowed_emails,restricted,access_hash) values('registered','Sistema','Empresa',array['mae@example.com','segunda@example.com'],true,$1)",['a'.repeat(64)]);
+    assert.equal((await db.query("select all_accounts from public.central_projects where id='registered'")).rows[0].all_accounts,false);
+    await db.query("update public.central_projects set all_accounts=true,allowed_emails='{}' where id='registered'");
+    assert.equal((await db.query("select all_accounts from public.central_projects where id='registered'")).rows[0].all_accounts,true);
     await assert.rejects(db.query("insert into public.central_projects(id,name,access_hash) values('duplicate','Duplicado',$1)",['a'.repeat(64)]),/duplicate key/);
     const key = index => createHash('sha256').update(String(index)).digest('hex');
     const report={id:'report-id',title:'Teste',description:'Descrição extensa '+'a'.repeat(600)+' buscar no final',type:'bug',links:['https://example.com']};

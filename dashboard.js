@@ -219,7 +219,8 @@
       card.append(heading,element('p',project.company || project.name,'muted'));
       const accounts=element('ul',undefined,'authorized-accounts');
       for (const account of project.allowedEmails || []) accounts.append(element('li',account));
-      card.append(element('strong','Contas principais autorizadas'),accounts);
+      if(project.allAccounts) card.append(element('strong','Todas as contas autenticadas do sistema'));
+      else card.append(element('strong','Contas principais autorizadas'),accounts);
       if (!project.restricted) card.append(element('p','As contas desta instalação ainda são controladas pelo código do SaaS. Configure o cadastro para usar o novo ID.','muted'));
       card.append(element('p',project.origins.length ? project.origins.join(' · ') : 'Domínio será cadastrado na primeira conexão.','muted'));
       if (project.connectedAt) card.append(element('p',`Última autorização: ${date(project.connectedAt)}`,'muted'));
@@ -272,10 +273,16 @@
       if(current===epoch) { $('#system-action-yes').disabled=false; $('#system-action-no').disabled=false; renderRegistry(); }
     }
   };
+  function accountScope() {
+    const all=$('#system-scope').value==='all';
+    $('#system-account-fields').hidden=all; $('#system-emails').required=!all; $('#system-emails').disabled=all;
+  }
+  $('#system-scope').onchange=accountScope;
   function systemForm(project=null) {
     editingSystem=project; const form=$('#system-form'); form.reset();
     form.elements.company.value=project?.company || project?.name || ''; form.elements.name.value=project?.name || '';
     form.elements.emails.value=(project?.allowedEmails || []).join('\n'); form.elements.origins.value=(project?.origins || []).join('\n');
+    form.elements.scope.value=project?.allAccounts?'all':'specific'; accountScope();
     $('#system-dialog-title').textContent=project?'Editar sistema':'Cadastrar sistema'; $('.rotate-id').hidden=!project?.restricted;
     $('#system-warning').hidden=!project || project.restricted; $('#system-error').textContent='';
     $('#save-system').textContent=project?'Salvar alterações':'Salvar e gerar ID'; $('#save-system').disabled=false; $('#system-dialog').showModal();
@@ -283,16 +290,19 @@
   $('#system-form').onsubmit=async event=>{
     event.preventDefault(); const form=event.currentTarget, current=epoch, id=editingSystem?.id;
     const lines=value=>value.split(/[\n,;]+/).map(item=>item.trim()).filter(Boolean);
-    const input={name:form.elements.name.value,company:form.elements.company.value,allowedEmails:lines(form.elements.emails.value),origins:lines(form.elements.origins.value),...(id?{id,rotateId:$('#rotate-id').checked}:{})};
+    const allAccounts=form.elements.scope.value==='all';
+    const input={name:form.elements.name.value,company:form.elements.company.value,allAccounts,allowedEmails:allAccounts?[]:lines(form.elements.emails.value),origins:lines(form.elements.origins.value),...(id?{id,rotateId:$('#rotate-id').checked}:{})};
     $('#save-system').disabled=true; $('#system-error').textContent='';
     try {
       const saved=await api('/api/reports?systems=1',{method:id?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)});
       if (current!==epoch) return;
       revision++; projects=[...projects.filter(project=>project.id!==saved.project.id),saved.project]; names[saved.project.id]=saved.project.name; fingerprint=''; render(); $('#system-dialog').close();
       if (saved.accessId) {
-        const instructions=`Integre a Central de Bugs no sistema ${saved.project.name}, da empresa ${saved.project.company}.\n\nCentral: ${location.origin}\nID de acesso (somente no servidor): ${saved.accessId}\nContas autorizadas: ${saved.project.allowedEmails.join(', ')}\n\nLeia e siga o guia completo antes de alterar o SaaS:\nhttps://github.com/Ioseph-Hughes/Central-de-Bugs/blob/main/INTEGRACAO-PARA-IA.md\n\nConfirme a conta no servidor usando a autenticação existente. Não aceite e-mail informado pelo navegador e não exponha o ID em código público. Use CentralBugs.connect, remova o widget ao sair ou trocar de conta e teste uma conta permitida e outra não permitida.`;
+        const scope=saved.project.allAccounts?'Todas as contas autenticadas do sistema (sem lista de e-mails).':`Contas autorizadas: ${saved.project.allowedEmails.join(', ')}`;
+        const verification=saved.project.allAccounts?'teste duas contas autenticadas diferentes e confirme que visitantes sem sessão não têm acesso.':'teste uma conta permitida e outra não permitida.';
+        const instructions=`Integre a Central de Bugs no sistema ${saved.project.name}, da empresa ${saved.project.company}.\n\nCentral: ${location.origin}\nID de acesso (somente no servidor): ${saved.accessId}\nDisponibilidade: ${scope}\n\nLeia e siga o guia completo antes de alterar o SaaS:\nhttps://github.com/Ioseph-Hughes/Central-de-Bugs/blob/main/INTEGRACAO-PARA-IA.md\n\nConfirme a conta no servidor usando a autenticação existente. Não aceite e-mail informado pelo navegador e não exponha o ID em código público. Chame CentralBugs.connect para qualquer conta autenticada; a Central decide a permissão. Remova o widget ao sair ou trocar de conta e ${verification}`;
         $('#access-id').textContent=saved.accessId; $('#integration-instructions').textContent=instructions; $('#copy-message').textContent=''; $('#integration-dialog').showModal();
-      } else $('#sync').textContent='Cadastro atualizado. As contas removidas deixam de ser autorizadas nos próximos envios.';
+      } else $('#sync').textContent='Cadastro atualizado. A nova disponibilidade será verificada na próxima autorização ou envio. Filtros de conta no código do SaaS precisam ser ajustados nele.';
     } catch(error) { if(current===epoch) $('#system-error').textContent=error.message; }
     finally { if(current===epoch) $('#save-system').disabled=false; }
   };

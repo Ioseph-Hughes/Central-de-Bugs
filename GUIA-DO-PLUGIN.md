@@ -118,9 +118,9 @@ Quem precisa consultar e gerenciar as ocorrências acessa o painel online com um
 Para entregar a integração a outro desenvolvedor ou IA, compartilhe este guia, o `README.md`, o `central-bugs.js`, o identificador do sistema e o endereço da API. Se for compartilhar o repositório privado, conceda acesso pelo GitHub. As credenciais administrativas e a chave secreta do servidor ficam fora do código distribuído.
 
 
-## Cadastro de sistemas e contas autorizadas (v0.6)
+## Cadastro de sistemas e disponibilidade (v0.10)
 
-A Central de Sistemas cadastra empresa, sistema e uma ou várias contas principais. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.
+A Central de Sistemas cadastra empresa e sistema. Em **Quem pode usar o plugin?**, escolha **Contas específicas** (uma ou várias contas principais) ou **Todas as contas do sistema** (sem cadastrar e-mails, com sessão autenticada obrigatória). As opções anteriores são preservadas. Filtros de conta no código do SaaS precisam ser ajustados nesse projeto para respeitar essa escolha. Ela gera um ID de integração para o servidor do SaaS. O roteiro completo, incluindo autenticação, conexão do widget, verificação e remoção, está em [INTEGRACAO-PARA-IA.md](INTEGRACAO-PARA-IA.md). As ocorrências aparecem em quatro blocos por empresa: Bugs novos, Em análise, Em processamento e Terminados. Os status anteriores são preservados. É possível apagar uma ocorrência com seus anexos ou selecionar relatos terminados por data em **Apagar bugs antigos**.
 
 ## Desconectar ou deletar sistemas
 

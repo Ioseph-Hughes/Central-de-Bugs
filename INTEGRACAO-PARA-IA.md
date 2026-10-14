@@ -1,24 +1,24 @@
 # Integrar um sistema à Central de Bugs — guia para qualquer IA
 
-Este arquivo é o contrato de integração da versão 0.6. Leia-o antes de alterar o SaaS. O plugin identifica cada sistema pelo cadastro na Central, independentemente do chat, conta de IA ou modelo usado para instalá-lo.
+Este arquivo é o contrato de integração da versão 0.10. Leia-o antes de alterar o SaaS. O plugin identifica cada sistema pelo cadastro na Central, independentemente do chat, conta de IA ou modelo usado para instalá-lo.
 
 ## 1. Objetivo e informações recebidas
 
-A Central reúne bugs, melhorias e ajustes dos sistemas de uma empresa. O widget permite escrever relatos, anexar várias imagens, capturar a tela inteira ou recortar uma área e informar links. O painel mantém quatro etapas por empresa: **Bugs novos → Em análise → Em processamento → Terminados**.
+A Central reúne bugs, melhorias e ajustes dos sistemas de uma empresa. O widget permite escrever relatos, anexar várias imagens, capturar a tela inteira ou recortar uma área. O painel mantém quatro etapas por empresa: **Bugs novos → Em análise → Em processamento → Terminados**.
 
 Você receberá:
 
 - A URL da Central (por exemplo, `https://central-de-bugs.vercel.app`).
 - O **ID de acesso** gerado no cadastro, começando com `cb_`.
-- Os e-mails das contas principais cadastradas. Pode haver várias contas.
+- A disponibilidade escolhida: **Contas específicas**, com um ou vários e-mails, ou **Todas as contas do sistema**, sem lista de e-mails.
 - O repositório do SaaS a integrar.
 
-O ID identifica e autoriza o servidor desse SaaS. O e-mail identifica a conta autorizada naquele sistema. Nenhuma informação do chat é usada para identificar os relatos.
+O ID identifica e autoriza o servidor desse SaaS. O e-mail confirmado identifica o autor do relato e, no modo de contas específicas, também é conferido na lista autorizada. Nenhuma informação do chat é usada para identificar os relatos.
 
 ## 2. Preparar o cadastro e o ambiente
 
 1. Na Central, abra **Central de Sistemas → Cadastrar sistema**.
-2. Informe empresa, nome do sistema e contas autorizadas (um e-mail por linha).
+2. Informe empresa e nome do sistema. Em **Quem pode usar o plugin?**, escolha **Contas específicas** e informe os e-mails (um por linha), ou **Todas as contas do sistema**; nessa opção os e-mails são dispensados. Todas significa todas as contas autenticadas, nunca visitantes.
 3. Opcionalmente informe os domínios, com protocolo, sem caminho ou barra final. Cada domínio precisa de uma linha; `https://site.com` e `https://www.site.com` são distintos.
 4. Salve, guarde o ID mostrado e copie as instruções. A Central guarda somente o hash desse ID; ele não é recuperável. Se perdido, gere outro na edição do cadastro.
 5. No ambiente **do servidor do SaaS**, configure:
@@ -102,7 +102,7 @@ Content-Type: application/json
 
 Resposta 200: `{ projectId, endpoint, transport, user: { email }, token }`.
 
-O `token` vale 15 minutos, está vinculado ao sistema, conta e domínio e só permite o envio de relatos. O endpoint verifica as contas novamente em cada envio. Remover um e-mail, mudar os domínios ou renovar o ID invalida o acesso correspondente. O plugin renova essa autorização antes de preparar e concluir um envio; uma descrição longa não precisa ser apagada quando o token expirar.
+O `token` vale 15 minutos, está vinculado ao sistema, conta e domínio e só permite o envio de relatos. O endpoint verifica as contas novamente em cada envio. No modo específico, remover um e-mail invalida o acesso correspondente. Mudar de todas as contas para contas específicas bloqueia os usuários excluídos na próxima autorização ou envio, inclusive tickets emitidos anteriormente. Mudar domínios ou renovar o ID também invalida o acesso correspondente. O plugin renova essa autorização antes de preparar e concluir um envio; uma descrição longa não precisa ser apagada quando o token expirar.
 
 ## 4. Carregar o widget somente após a autenticação do SaaS
 
@@ -131,6 +131,8 @@ feedback?.destroy();
 
 Integre no ciclo de vida do projeto:
 
+- Chame `connect` para qualquer conta autenticada e deixe a Central decidir a permissão. Não fixe uma lista de e-mails ou um filtro de conta mãe/perfil no frontend ou endpoint do SaaS, pois isso impediria a opção **Todas as contas** de funcionar. Isso não altera os papéis e permissões das outras funcionalidades do SaaS.
+
 - Mantenha uma única instância por conta autenticada; não crie outra a cada renderização ou renovação de token.
 - No logout ou troca de usuário, aborte imediatamente o ciclo anterior e destrua o widget. Crie um novo ciclo para a nova conta.
 - Se a autorização/script estiver carregando, impeça uma resposta atrasada de montar o widget após logout. Use AbortController e uma revisão/identificador do usuário no componente.
@@ -143,13 +145,13 @@ Se houver CSP, autorize a Central em `script-src` e `connect-src`, e o domínio 
 ## 5. Conferir e concluir o cadastro
 
 1. Publique as variáveis e o endpoint no servidor do SaaS.
-2. Entre em uma das contas cadastradas: o widget deve aparecer uma vez.
-3. Entre em uma conta não cadastrada: nenhum widget deve aparecer, e um envio direto sem autorização deve retornar 403.
+2. Em **Contas específicas**, entre em uma conta cadastrada: o widget deve aparecer uma vez; uma conta fora da lista deve ser recusada. Em **Todas as contas**, confira duas contas autenticadas diferentes, ambas com o widget.
+3. Em ambos os modos, visitantes sem sessão não podem receber autorização; um envio direto sem ticket deve retornar 403. Confira também que outro domínio não é aceito.
 4. Saia da conta permitida: o botão e qualquer formulário aberto devem desaparecer.
-5. Envie um relato com texto, link e duas imagens; confira na Central a empresa e o sistema corretos.
+5. Envie um relato com texto e duas imagens; confira na Central a empresa e o sistema corretos.
 6. Avance pelas quatro etapas, recarregue e confirme a persistência.
 7. Na **Central de Sistemas**, o cadastro passa a indicar **Conectado** depois da primeira autorização válida. Essa indicação confirma a troca entre servidores; o envio de teste confirma o funcionamento completo.
-8. Remova uma conta autorizada e confira que a próxima autorização/envio é recusada.
+8. Altere de todas as contas para contas específicas e confira que a próxima autorização/envio de uma conta fora da lista é recusada. Não é necessário trocar o ID para mudar a disponibilidade.
 
 A instalação é removível: retire o componente/script, o endpoint e as variáveis do SaaS. Os relatos já enviados permanecem na Central até serem apagados pelo administrador.
 
@@ -157,9 +159,15 @@ A instalação é removível: retire o componente/script, o endpoint e as variá
 
 As integrações anteriores à versão 0.6 permanecem no modo antigo, controladas pelo próprio SaaS. **Cadastrar um novo sistema não modifica automaticamente um SaaS existente.** Para migrá-lo, edite seu registro e configure o endpoint descrito neste guia. Ao salvar contas em um registro antigo, ele passa a exigir autorização; publique a mudança no SaaS junto dessa ativação.
 
-Em instalações Supabase existentes, execute `supabase/migrations/006-systems.sql` antes do deploy da Central. Em uma instalação nova, use `supabase/setup.sql`, que já inclui a estrutura completa.
+Em instalações Supabase existentes, execute `supabase/migrations/006-systems.sql` se ainda não aplicada e `supabase/migrations/20261014005611_optional_account_scope.sql` antes do deploy da Central. A nova coluna `all_accounts` começa como `false`, preservando as escolhas anteriores. Em uma instalação nova, use `supabase/setup.sql`, que já inclui a estrutura completa.
 
 A ação **Apagar** remove a ocorrência e seus arquivos do armazenamento ativo da Central. **Apagar bugs antigos** permite selecionar relatos terminados recebidos antes da data escolhida, dentro do sistema selecionado (ou todos), no histórico carregado de até 1.000 ocorrências. A busca e os filtros da lista não limitam essa seleção; a empresa/sistema e a data delimitam os candidatos. A confirmação é obrigatória na interface.
+
+### Alterar a disponibilidade em uma integração existente
+
+Edite o cadastro na Central e escolha a disponibilidade. Nas integrações que já chamam `CentralBugs.connect` para qualquer usuário autenticado, o servidor aplica a política sem republicar o SaaS nem trocar o ID. A nova política é conferida na próxima autorização ou envio. Para uma conta que ainda não tinha widget, recarregue a página para tentar conectar.
+
+**Um filtro de conta mãe/e-mail/perfil dentro do código do SaaS continua valendo até ser ajustado nesse projeto.** Selecionar todas na Central não remove esse filtro remoto. Integrações antigas com `init` devem primeiro migrar para o fluxo de ID e endpoint autenticado. Peça à IA responsável para remover somente o filtro exclusivo do plugin, manter a autenticação e chamar `connect` para todas as contas com sessão válida.
 
 ## Desconectar ou excluir um sistema
 
