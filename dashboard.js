@@ -136,7 +136,7 @@
     const report=item.report, row=element('button',undefined,'occurrence'), content=element('span'); row.dataset.key=item.key; row.setAttribute('aria-label',`Abrir ocorrência: ${report.title}`);
     const meta=element('span',undefined,'row-meta');
     meta.append(element('span',types[report.type],`badge ${report.type}`),element('span',systemName(report.projectId)),element('span',date(item.receivedAt)),
-      element('span',`${item.attachmentCount ?? item.attachments.length} imagem(ns) · ${item.linkCount ?? report.links.length} link(s)`));
+      element('span',`${item.attachmentCount ?? item.attachments.length} anexo(s) · ${item.linkCount ?? report.links.length} link(s)`));
     content.append(element('strong',report.title),element('span',report.description,'excerpt'),meta);
     row.append(element('span',icons[report.type],'type-icon'),content); row.onclick=()=>openDetail(item.key);
     const wrapper=element('article',undefined,'occurrence-row'), actions=element('div',undefined,'card-actions');
@@ -185,18 +185,24 @@
     statusRow.append(label, select, statusMessage); container.append(statusRow);
     function section(title) { const section = element('section', undefined, 'detail-section'); section.append(element('h3', title)); container.append(section); return section; }
     section('Descrição completa').append(element('p', report.description, 'description'));
-    const images = section(`Imagens e capturas (${item.attachments.length})`), gallery = element('div', undefined, 'gallery');
-    if (!item.attachments.length) images.append(element('p', 'Nenhuma imagem anexada.', 'muted'));
+    const attachments = section(`Anexos (${item.attachments.length})`), gallery = element('div', undefined, 'gallery');
+    if (!item.attachments.length) attachments.append(element('p', 'Nenhum arquivo anexado.', 'muted'));
     for (const file of item.attachments) {
       const figure = element('figure');
-      if (file.unavailable) figure.append(element('div', 'O receptor antigo não guardou o arquivo desta imagem.', 'unavailable'));
+      if (file.unavailable) figure.append(element('div', 'O receptor antigo não guardou este arquivo.', 'unavailable'));
       else {
         const link = element('a'); link.href = file.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-        const img = element('img'); img.src = file.url; img.alt = file.name; img.loading = 'lazy'; link.append(img); figure.append(link);
+        if (file.type === 'application/pdf') {
+          link.setAttribute('aria-label', `Abrir PDF: ${file.name}`);
+          link.append(element('span', 'PDF · Abrir arquivo', 'pdf-preview'));
+        } else {
+          const img = element('img'); img.src = file.url; img.alt = file.name; img.loading = 'lazy'; link.append(img);
+        }
+        figure.append(link);
       }
       figure.append(element('figcaption', `${file.name} · ${(file.size / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`)); gallery.append(figure);
     }
-    images.append(gallery);
+    attachments.append(gallery);
     const links = section(`Links enviados (${report.links.length})`);
     if (!report.links.length) links.append(element('p', 'Nenhum link informado.', 'muted'));
     else { const ul = element('ul', undefined, 'detail-links'); for (const url of report.links) { const li = element('li'); li.append(safeLink(url)); ul.append(li); } links.append(ul); }

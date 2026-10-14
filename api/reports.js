@@ -1,11 +1,10 @@
 // Receptor Vercel: banco/arquivos no Supabase, sem disco ou portas locais.
 const { createClient } = require('@supabase/supabase-js');
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
-const { validImage } = require('../server.cjs');
+const { validAttachment, attachmentTypes } = require('../server.cjs');
 const registry = require('../registry.cjs');
 const bucket = 'central-attachments';
 const states = ['novo','em-analise','em-correcao','resolvido'];
-const imageTypes = new Set(['image/png','image/jpeg','image/webp','image/gif','image/avif']);
 const fail = (status,message) => Object.assign(new Error(message),{ status });
 const hash = value => createHash('sha256').update(value).digest('hex');
 const json = (res,status,value) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}); res.end(JSON.stringify(value)); };
@@ -16,10 +15,10 @@ function validate(report) {
     !/^[\w-]{1,100}$/.test(report.projectId) || !['bug','melhoria','ajuste'].includes(report.type) ||
     typeof report.createdAt !== 'string' || !Number.isFinite(Date.parse(report.createdAt)) || !Array.isArray(report.links) || !report.links.every(webURL) ||
     !webURL(report.context?.url) || !Array.isArray(report.attachments) ||
-    !report.attachments.every(file => file && typeof file.name === 'string' && file.name && imageTypes.has(file.type) && Number.isSafeInteger(file.size) && file.size > 0)) {
-    throw fail(400,'Relato ou metadados das imagens inválidos.');
+    !report.attachments.every(file => file && typeof file.name === 'string' && file.name && attachmentTypes.has(file.type) && Number.isSafeInteger(file.size) && file.size > 0)) {
+    throw fail(400,'Relato ou metadados dos anexos inválidos.');
   }
-  if (report.attachments.some(file => file.size > 50 * 1024 * 1024)) throw fail(413,'Cada imagem pode ter até 50 MB neste armazenamento.');
+  if (report.attachments.some(file => file.size > 50 * 1024 * 1024)) throw fail(413,'Cada arquivo pode ter até 50 MB neste armazenamento.');
 }
 async function body(req) {
   // Também limitar antes do parse em execução Node; na Vercel req.body já é parseado.
@@ -246,18 +245,18 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
             const info = checked(await client.storage.from(bucket).info(file.path));
             if (Number(info.size) !== file.size || info.contentType !== file.type) {
               checked(await client.storage.from(bucket).remove([file.path]));
-              throw fail(400,'Imagem incompleta ou diferente do arquivo informado. Tente enviar novamente.');
+              throw fail(400,'Anexo incompleto ou diferente do arquivo informado. Tente enviar novamente.');
             }
-            // Verificar os bytes, além do MIME. URL autenticada com Range evita baixar a imagem inteira.
+            // Verificar os bytes, além do MIME. Range evita baixar o anexo inteiro.
             const response = await fetch(`${supabaseURL}/storage/v1/object/authenticated/${bucket}/${file.path}`,{
               headers:{apikey:secret,Authorization:`Bearer ${secret}`,Range:'bytes=0-63'},signal:AbortSignal.timeout(10000)
             });
-            if (!response.ok) throw fail(503,'Não foi possível verificar uma imagem enviada.');
+            if (!response.ok) throw fail(503,'Não foi possível verificar um anexo enviado.');
             const reader = response.body.getReader(); let first = Buffer.alloc(0);
             try { while (first.length < 64) { const {value,done} = await reader.read(); if (done) break; first = Buffer.concat([first,Buffer.from(value)]).subarray(0,64); } } finally { await reader.cancel(); }
-            if (!validImage(first,file.type)) {
+            if (!validAttachment(first,file.type)) {
               checked(await client.storage.from(bucket).remove([file.path]));
-              throw fail(400,'Um arquivo não corresponde ao formato de imagem. Remova-o ou escolha outra imagem.');
+              throw fail(400,'Um arquivo não corresponde ao formato informado. Remova-o ou escolha outro arquivo.');
             }
           }
           checked(await client.from('central_reports').update({ready:true}).eq('key',row.key));

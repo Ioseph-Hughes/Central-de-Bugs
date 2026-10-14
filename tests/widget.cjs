@@ -59,6 +59,13 @@ const { chromium } = require('playwright');
     assert.equal(await widget.locator('[name=links]').count(),0);
     await widget.getByRole('button',{name:'Ativar modo escuro',exact:true}).click();assert.equal(await widget.getAttribute('data-theme'),'dark');
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==', 'base64');
+    assert.ok((await widget.locator('input[type=file]').getAttribute('accept')).includes('application/pdf'));
+    await widget.locator('input[type=file]').evaluate(input=>{
+      const files=new DataTransfer(); files.items.add(new File(['%PDF-1.4\n'], 'sem-mime.pdf'));
+      input.files=files.files; input.dispatchEvent(new Event('change',{bubbles:true}));
+    });
+    assert.equal(await widget.getByRole('link',{name:'Abrir PDF: sem-mime.pdf',exact:true}).count(),1);
+    await widget.getByRole('button',{name:'Remover sem-mime.pdf'}).click();
     await widget.locator('input[type=file]').setInputFiles([
       { name: 'tela.png', mimeType: 'image/png', buffer: png },
       { name: 'outra-tela.png', mimeType: 'image/png', buffer: png }

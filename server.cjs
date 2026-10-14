@@ -7,7 +7,7 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const root = __dirname;
 const states = ['novo', 'em-analise', 'em-correcao', 'resolvido'];
-const imageTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif']);
+const attachmentTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'application/pdf']);
 const webURL = value => { try { return ['http:', 'https:'].includes(new URL(value).protocol); } catch { return false; } };
 const keyFor = report => createHash('sha256').update(JSON.stringify([report.projectId, report.id])).digest('hex');
 const json = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
@@ -17,11 +17,12 @@ function validate(report, files) {
     !['bug', 'melhoria', 'ajuste'].includes(report.type) || !Number.isFinite(Date.parse(report.createdAt)) ||
     !Array.isArray(report.links) || !report.links.every(url => typeof url === 'string' && webURL(url)) ||
     !Array.isArray(report.attachments) || report.attachments.length !== files.length ||
-    !files.every(file => typeof file.arrayBuffer === 'function' && imageTypes.has(file.type) && file.size > 0)) {
-    throw Object.assign(new Error('Relato ou imagens inválidos.'), { status: 400 });
+    !files.every(file => typeof file.arrayBuffer === 'function' && attachmentTypes.has(file.type) && file.size > 0)) {
+    throw Object.assign(new Error('Relato ou anexos inválidos.'), { status: 400 });
   }
 }
-function validImage(bytes, type) {
+function validAttachment(bytes, type) {
+  if (type === 'application/pdf') return bytes.subarray(0, 5).equals(Buffer.from('%PDF-'));
   if (type === 'image/png') return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   if (type === 'image/jpeg') return bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255]));
   if (type === 'image/gif') return ['GIF87a', 'GIF89a'].includes(bytes.subarray(0, 6).toString('ascii'));
@@ -134,7 +135,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
             const attachments = [];
             for (const [index, file] of files.entries()) {
               const bytes = Buffer.from(await file.arrayBuffer());
-              if (!validImage(bytes, file.type)) throw Object.assign(new Error('O arquivo não corresponde ao formato de imagem informado.'), { status: 400 });
+              if (!validAttachment(bytes, file.type)) throw Object.assign(new Error('O arquivo não corresponde ao formato informado.'), { status: 400 });
               await fs.writeFile(path.join(temporary, String(index)), bytes, { mode: 0o600 });
               attachments.push({ name: file.name, type: file.type, size: file.size, url: `/attachments/${key}/${index}` });
             }
@@ -172,7 +173,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
       const attachmentMatch = url.pathname.match(/^\/attachments\/([a-f0-9]{64})\/(\d+)$/);
       if (req.method === 'GET' && attachmentMatch) {
         const file = records.get(attachmentMatch[1])?.attachments[Number(attachmentMatch[2])];
-        if (!file || file.unavailable) { json(res, 404, { error: 'Imagem indisponível.' }); return; }
+        if (!file || file.unavailable) { json(res, 404, { error: 'Arquivo indisponível.' }); return; }
         const bytes = await fs.readFile(path.join(dataDir, attachmentMatch[1], attachmentMatch[2]));
         res.writeHead(200, { 'Content-Type': file.type, 'Content-Security-Policy': "default-src 'none'; sandbox" }); res.end(bytes); return;
       }
@@ -200,7 +201,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
     }
   });
 }
-module.exports = { createCentralServer, keyFor, validImage };
+module.exports = { createCentralServer, keyFor, validAttachment, attachmentTypes };
 if (require.main === module) {
   createCentralServer().then(server => {
     server.listen(4173, '127.0.0.1', () => console.log('Central: http://localhost:4173 — dados em ./data'));

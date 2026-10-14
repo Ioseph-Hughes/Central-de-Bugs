@@ -22,7 +22,7 @@
     return pageCapture;
   }
   const positions = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
-  const imageTypes = /^image\/(png|jpeg|webp|gif|avif)$/i;
+  const attachmentTypes = /^(image\/(png|jpeg|webp|gif|avif)|application\/pdf)$/i;
   const style = `
     :host { all: initial; font: 14px/1.5 system-ui, sans-serif; color: #202624; }
     * { box-sizing: border-box; } [hidden] { display: none !important; }
@@ -60,6 +60,7 @@
     .attachments { display: grid; gap: 8px; margin: 12px 0; }
     .attachment { display: flex; align-items: center; gap: 10px; background: #f1f3ec; border-radius: 9px; padding: 8px; }
     .attachment img { width: 46px; height: 46px; object-fit: cover; border-radius: 6px; } .attachment span { flex: 1; overflow-wrap: anywhere; font-size: 12px; }
+    .attachment .file-icon { display: grid; place-items: center; flex: 0 0 46px; height: 46px; border: 1px solid currentColor; border-radius: 6px; color: inherit; font-size: 12px; font-weight: 700; }
     .attachment button { border: 0; background: transparent; color: #993d28; padding: 10px; }
     .status { font-size: 13px; margin: 14px 0; color: #8b3322; white-space: pre-wrap; overflow-wrap: anywhere; }
     .status.success { color: #326344; } footer { border-top: 1px solid #e4e7de; margin-top: 20px; padding-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -132,12 +133,12 @@
               <button type="button" class="back">← Alterar tipo de relato</button>
               <label for="cb-summary">Título</label><input id="cb-summary" name="title" placeholder="Resuma o que você quer nos contar" required>
               <label for="cb-text">O que aconteceu?</label><textarea id="cb-text" name="description" placeholder="Descreva o problema, o que você esperava ou sua ideia…" required></textarea>
-              <label>Imagens <span class="muted">· opcional</span></label>
-              <div class="row"><button type="button" class="secondary upload">＋ Adicionar imagens</button></div>
+              <label>Imagens e PDFs <span class="muted">· opcional</span></label>
+              <div class="row"><button type="button" class="secondary upload">＋ Adicionar arquivos</button></div>
               <div class="row" style="margin-top:8px"><button type="button" class="secondary capture-area">✂ Selecionar área</button><button type="button" class="secondary capture">▣ Tela inteira</button></div>
-              <input class="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" multiple hidden aria-label="Selecionar imagens">
+              <input class="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,application/pdf,.pdf" multiple hidden aria-label="Selecionar arquivos">
               <p class="muted capture-help" style="margin-top:8px">Você também pode colar um print neste formulário.</p>
-              <div class="attachments" aria-label="Imagens anexadas"></div>
+              <div class="attachments" aria-label="Arquivos anexados"></div>
               <footer><span class="muted">Revise antes de enviar.</span><button type="submit" class="primary submit">Enviar relato ↗</button></footer>
             </fieldset>
           </form>
@@ -214,21 +215,26 @@
       $('.attachments').replaceChildren();
       attachments.forEach((item, index) => {
         const row = document.createElement('div'); row.className = 'attachment';
-        const img = document.createElement('img'); img.src = item.url; img.alt = '';
+        const preview = document.createElement(item.file.type === 'application/pdf' ? 'a' : 'img');
+        if (item.file.type === 'application/pdf') {
+          preview.href = item.url; preview.target = '_blank'; preview.rel = 'noopener noreferrer';
+          preview.className = 'file-icon'; preview.textContent = 'PDF'; preview.setAttribute('aria-label', `Abrir PDF: ${item.file.name}`);
+        } else { preview.src = item.url; preview.alt = ''; }
         const name = document.createElement('span'); name.textContent = item.file.name;
         const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', `Remover ${item.file.name}`);
         remove.onclick = () => { if (busy || capturing) return; URL.revokeObjectURL(item.url); attachments.splice(index, 1); renderAttachments(); };
-        row.append(img, name, remove); $('.attachments').append(row);
+        row.append(preview, name, remove); $('.attachments').append(row);
       });
     }
     function addFiles(files) {
       if (busy || destroyed) return;
       let rejected = false;
-      for (const file of files) {
-        if (!imageTypes.test(file.type)) { rejected = true; continue; }
+      for (let file of files) {
+        if (!file.type && /\.pdf$/i.test(file.name)) file = new File([file], file.name, { type: 'application/pdf' });
+        if (!attachmentTypes.test(file.type)) { rejected = true; continue; }
         attachments.push({ file, url: URL.createObjectURL(file) });
       }
-      renderAttachments(); message(rejected ? 'Use imagens PNG, JPEG, WebP, GIF ou AVIF.' : '');
+      renderAttachments(); message(rejected ? 'Use imagens PNG, JPEG, WebP, GIF, AVIF ou arquivos PDF.' : '');
     }
     function clearDraft() {
       for (const item of attachments) URL.revokeObjectURL(item.url);
@@ -432,7 +438,7 @@
               const url = new URL(slot.url);
               if (url.protocol !== 'https:' && url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') throw new Error('Endereço de upload inválido.');
               const response = await fetch(url, { method: 'PUT', headers: { 'Content-Type': files[index].type, 'x-upsert': 'false' }, body: files[index], signal: AbortSignal.any([pendingRequest.signal, AbortSignal.timeout(120000)]) });
-              if (!response.ok) throw new Error(`Não foi possível enviar a imagem ${index + 1}. Tente novamente.`);
+              if (!response.ok) throw new Error(`Não foi possível enviar o anexo ${index + 1}. Tente novamente.`);
             }
             await requestJSON({ action: 'commit', key: prepared.key, receipt: prepared.receipt });
           }
@@ -446,7 +452,7 @@
         }
         if (!destroyed) { clearDraft(); message(config.successMessage || 'Relato enviado. Obrigado por ajudar a melhorar o sistema!', true); }
       } catch (error) {
-        if (!destroyed) message(`${config.transport === 'signed-upload' && error.name === 'Error' ? error.message + '\n' : ''}Não foi possível enviar. Seu texto e suas imagens foram preservados. Tente novamente.`);
+        if (!destroyed) message(`${config.transport === 'signed-upload' && error.name === 'Error' ? error.message + '\n' : ''}Não foi possível enviar. Seu texto e seus anexos foram preservados. Tente novamente.`);
       } finally {
         clearTimeout(timeout); pendingRequest = undefined; busy = false; $('fieldset').disabled = false; $('.submit').textContent = 'Enviar relato ↗'; idleChanged();
       }
