@@ -1,9 +1,10 @@
 // Receptor Vercel: banco/arquivos no Supabase, sem disco ou portas locais.
 const { createClient } = require('@supabase/supabase-js');
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
-const { validAttachment, attachmentTypes } = require('../server.cjs');
+const { validAttachment, attachmentTypes, generatedFileName } = require('../server.cjs');
 const registry = require('../registry.cjs');
 const bucket = 'central-attachments';
+const generatedPath = key => `${key}/generated.pdf`;
 const states = ['novo','em-analise','em-correcao','resolvido'];
 const fail = (status,message) => Object.assign(new Error(message),{ status });
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -69,6 +70,28 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
       }
     }
     return { key:row.key,report:row.report,attachments,status:row.status,receivedAt:row.received_at,updatedAt:row.updated_at };
+  }
+  async function filePrefix(path) {
+    const response = await fetch(`${supabaseURL}/storage/v1/object/authenticated/${bucket}/${path}`, {
+      headers: { apikey: secret, Authorization: `Bearer ${secret}`, Range: 'bytes=0-63' }, signal: AbortSignal.timeout(10000)
+    });
+    if (!response.ok) throw fail(503, 'Não foi possível verificar um arquivo enviado.');
+    const reader = response.body.getReader(); let first = Buffer.alloc(0);
+    try { while (first.length < 64) { const { value, done } = await reader.read(); if (done) break; first = Buffer.concat([first, Buffer.from(value)]).subarray(0, 64); } }
+    finally { await reader.cancel(); }
+    return first;
+  }
+  async function generatedFile(row) {
+    const path = generatedPath(row.key), result = await client.storage.from(bucket).info(path);
+    if (result.error && ['404', '400'].includes(String(result.error.statusCode))) return null;
+    const info = checked(result);
+    if (!info || info.contentType !== 'application/pdf' || !Number.isSafeInteger(Number(info.size)) || Number(info.size) <= 0 || Number(info.size) > 50 * 1024 * 1024 || !validAttachment(await filePrefix(path), 'application/pdf')) {
+      checked(await client.storage.from(bucket).remove([path]));
+      throw fail(400, 'O PDF salvo está incompleto ou inválido. Tente gerar novamente.');
+    }
+    const urls = checked(await client.storage.from(bucket).createSignedUrls([path], 3600));
+    if (!urls[0]?.signedUrl) throw fail(503, 'Não foi possível abrir o PDF salvo. Tente novamente.');
+    return { name: generatedFileName(row), size: Number(info.size), createdAt: info.createdAt, url: urls[0].signedUrl };
   }
   return async (req,res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Vary','Origin');
@@ -148,7 +171,7 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
           // Revogar antes da limpeza; em falha, manter o cadastro para repetir a exclusão.
           checked(await client.from('central_projects').update(registry.disconnect()).eq('id',project.id));
           const rows=checked(await client.from('central_reports').select('key,attachments').eq('project_id',project.id).order('key').limit(100));
-          const paths=rows.flatMap(row=>row.attachments.map(file=>file.path));
+          const paths=rows.flatMap(row=>[...row.attachments.map(file=>file.path),generatedPath(row.key)]);
           for (let index=0;index<paths.length;index+=100) checked(await client.storage.from(bucket).remove(paths.slice(index,index+100)));
           if (rows.length) checked(await client.from('central_reports').delete().eq('project_id',project.id).in('key',rows.map(row=>row.key)));
           const remaining=checked(await client.from('central_reports').select('key').eq('project_id',project.id).limit(1));
@@ -157,6 +180,22 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
           json(res,200,{deleted:true,removed:rows.length}); return;
         }
         throw fail(405,'Método não permitido.');
+      }
+      if (url.searchParams.get('file') === 'generated') {
+        const user = await authorize(req);
+        if (typeof key !== 'string' || !/^[a-f0-9]{64}$/.test(key)) throw fail(400, 'Ocorrência inválida.');
+        const row = checked(await client.from('central_reports').select('*').eq('key', key).eq('ready', true).maybeSingle());
+        if (!row) throw fail(404, 'Ocorrência não encontrada.');
+        permission(projects.find(project => project.id === row.project_id), user);
+        if (req.method === 'GET') { json(res, 200, { file: await generatedFile(row) }); return; }
+        if (req.method !== 'POST') throw fail(405, 'Método não permitido.');
+        const input = await body(req);
+        if (!['prepare', 'commit'].includes(input.action)) throw fail(400, 'Ação de geração inválida.');
+        const file = await generatedFile(row);
+        if (file) { json(res, 200, { file }); return; }
+        if (input.action === 'commit') throw fail(409, 'O PDF ainda não foi salvo. Tente novamente.');
+        const upload = checked(await client.storage.from(bucket).createSignedUploadUrl(generatedPath(key), { upsert: false }));
+        json(res, 200, { file: null, upload: { url: upload.signedUrl } }); return;
       }
       if (req.method === 'GET') {
         const user=await authorize(req);
@@ -191,7 +230,7 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         if (!row) throw fail(404,'Ocorrência não encontrada.');
         permission(projects.find(project=>project.id===row.project_id),user,true);
         // Só retirar o registro após excluir seus arquivos. Em falha, a operação pode ser repetida.
-        if (row.attachments.length) checked(await client.storage.from(bucket).remove(row.attachments.map(file=>file.path)));
+        checked(await client.storage.from(bucket).remove([...row.attachments.map(file=>file.path),generatedPath(row.key)]));
         checked(await client.from('central_reports').delete().eq('key',key));
         json(res,200,{deleted:true}); return;
       }
@@ -248,12 +287,7 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
               throw fail(400,'Anexo incompleto ou diferente do arquivo informado. Tente enviar novamente.');
             }
             // Verificar os bytes, além do MIME. Range evita baixar o anexo inteiro.
-            const response = await fetch(`${supabaseURL}/storage/v1/object/authenticated/${bucket}/${file.path}`,{
-              headers:{apikey:secret,Authorization:`Bearer ${secret}`,Range:'bytes=0-63'},signal:AbortSignal.timeout(10000)
-            });
-            if (!response.ok) throw fail(503,'Não foi possível verificar um anexo enviado.');
-            const reader = response.body.getReader(); let first = Buffer.alloc(0);
-            try { while (first.length < 64) { const {value,done} = await reader.read(); if (done) break; first = Buffer.concat([first,Buffer.from(value)]).subarray(0,64); } } finally { await reader.cancel(); }
+            const first = await filePrefix(file.path);
             if (!validAttachment(first,file.type)) {
               checked(await client.storage.from(bucket).remove([file.path]));
               throw fail(400,'Um arquivo não corresponde ao formato informado. Remova-o ou escolha outro arquivo.');

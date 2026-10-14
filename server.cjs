@@ -12,6 +12,10 @@ const states = ['novo', 'em-analise', 'em-correcao', 'resolvido'];
 const attachmentTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif', 'application/pdf']);
 const webURL = value => { try { return ['http:', 'https:'].includes(new URL(value).protocol); } catch { return false; } };
 const keyFor = report => createHash('sha256').update(JSON.stringify([report.projectId, report.id])).digest('hex');
+const generatedFileName = item => {
+  const slug = item.report.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'ocorrencia';
+  return `${slug}-${item.key.slice(0, 8)}.pdf`;
+};
 const json = (res, status, value) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(value)); };
 function validate(report, files) {
   if (!report || report.schemaVersion !== 1 || typeof report.id !== 'string' || !/^[\w-]{1,128}$/.test(report.id) ||
@@ -51,6 +55,14 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
   // ponytail: fila única para a Central local; usar banco transacional em múltiplos processos.
   let pending = Promise.resolve();
   function write(action) { const result = pending.then(action); pending = result.catch(() => {}); return result; }
+  async function generatedFile(key) {
+    const item = records.get(key);
+    if (!item) throw registry.fail(404, 'Ocorrência não encontrada.');
+    try {
+      const stat = await fs.stat(path.join(dataDir, key, 'generated.pdf'));
+      return { name: generatedFileName(item), size: stat.size, createdAt: stat.mtime.toISOString(), url: `/attachments/${key}/generated` };
+    } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  }
   async function body(req) {
     const chunks = []; let length = 0;
     for await (const chunk of req) {
@@ -151,6 +163,24 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
         json(res, 201, { id: record.report.id, key }); return;
       }
       const statusMatch = url.pathname.match(/^\/api\/reports\/([a-f0-9]{64})$/);
+      if (statusMatch && url.searchParams.get('file') === 'generated') {
+        const key = statusMatch[1];
+        if (!records.has(key)) throw registry.fail(404, 'Ocorrência não encontrada.');
+        if (req.method === 'GET') { json(res, 200, { file: await generatedFile(key) }); return; }
+        if (req.method !== 'POST') throw registry.fail(405, 'Método não permitido.');
+        if (origin && origin !== `http://${req.headers.host}`) throw registry.fail(403, 'Gere arquivos no painel da Central.');
+        const bytes = await body(req);
+        if (req.headers['content-type'] !== 'application/pdf' || !validAttachment(bytes, 'application/pdf')) throw registry.fail(400, 'O arquivo gerado precisa ser um PDF válido.');
+        if (bytes.length > 50 * 1024 * 1024) throw registry.fail(413, 'O PDF gerado pode ter até 50 MB.');
+        const file = await write(async () => {
+          const existing = await generatedFile(key); if (existing) return existing;
+          const target = path.join(dataDir, key, 'generated.pdf');
+          try { await fs.writeFile(target + '.tmp', bytes, { mode: 0o600 }); await fs.rename(target + '.tmp', target); }
+          finally { await fs.rm(target + '.tmp', { force: true }); }
+          return generatedFile(key);
+        });
+        json(res, 200, { file }); return;
+      }
       if (req.method==='DELETE' && statusMatch) {
         if (origin && origin!==`http://${req.headers.host}`) throw registry.fail(403,'Exclua ocorrências no painel da Central.');
         const removed=await write(async()=>{
@@ -171,6 +201,12 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
           await fs.rename(`${filename}.tmp`, filename); records.set(next.key, next); return next;
         });
         json(res, saved ? 200 : 404, saved || { error: 'Ocorrência não encontrada.' }); return;
+      }
+      if (req.method === 'GET' && /^\/attachments\/[a-f0-9]{64}\/generated$/.test(url.pathname)) {
+        const key = url.pathname.split('/')[2], file = await generatedFile(key);
+        if (!file) throw registry.fail(404, 'PDF ainda não gerado.');
+        res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Security-Policy': "default-src 'none'; sandbox" });
+        res.end(await fs.readFile(path.join(dataDir, key, 'generated.pdf'))); return;
       }
       const attachmentMatch = url.pathname.match(/^\/attachments\/([a-f0-9]{64})\/(\d+)$/);
       if (req.method === 'GET' && attachmentMatch) {
@@ -208,7 +244,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
     }
   });
 }
-module.exports = { createCentralServer, keyFor, validAttachment, attachmentTypes };
+module.exports = { createCentralServer, keyFor, validAttachment, attachmentTypes, generatedFileName };
 if (require.main === module) {
   createCentralServer().then(server => {
     server.listen(4173, '127.0.0.1', () => console.log('Central: http://localhost:4173 — dados em ./data'));

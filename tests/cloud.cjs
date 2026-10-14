@@ -90,11 +90,11 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
           if (req.method==='POST') { assert.equal(req.headers.apikey,'sb_secret_TEST'); uploadTokens.add(key); return json(res,200,{url:`${suffix}?token=test-signed-upload`}); }
           assert.ok(uploadTokens.has(key)); assert.equal(url.searchParams.get('token'),'test-signed-upload');
           if (files.has(key)) return json(res,409,{message:'already exists'});
-          files.set(key,{bytes:await read(req),type:req.headers['content-type']}); return json(res,200,{Key:key});
+          files.set(key,{bytes:await read(req),type:req.headers['content-type'],createdAt:new Date().toISOString()}); return json(res,200,{Key:key});
         }
         if (suffix.startsWith('/object/info/central-attachments/')) {
           assert.equal(req.headers.apikey,'sb_secret_TEST'); const file=files.get(suffix.split('/central-attachments/')[1]);
-          return file?json(res,200,{size:file.bytes.length,content_type:file.type}):json(res,404,{statusCode:'404',error:'not_found',message:'not found'});
+          return file?json(res,200,{size:file.bytes.length,content_type:file.type,created_at:file.createdAt}):json(res,404,{statusCode:'404',error:'not_found',message:'not found'});
         }
         if (suffix==='/object/sign/central-attachments' && req.method==='POST') {
           assert.equal(req.headers.apikey,'sb_secret_TEST'); const body=JSON.parse(await read(req));
@@ -134,10 +134,11 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     let result=await fetch(origin+'/api/reports',{method:'OPTIONS',headers:{Origin:'https://radarcontratual.com'}}); assert.equal(result.status,204); assert.equal(result.headers.get('Access-Control-Allow-Origin'),'https://radarcontratual.com');
     browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
     const page=await browser.newPage(), errors=[]; page.on('pageerror',error=>errors.push(error.message));
-    await page.route('https://central-test.supabase.co/**',async route=>{
+    const routeSupabase=async route=>{
       const req=route.request(), url=new URL(req.url()); const response=await fetch(origin+url.pathname+url.search,{method:req.method(),headers:req.headers(),...(req.postDataBuffer()?{body:req.postDataBuffer()}:{})});
       await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:Buffer.from(await response.arrayBuffer())});
-    });
+    };
+    await page.route('https://central-test.supabase.co/**',routeSupabase);
     await page.goto(origin); await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor(); assert.equal(await page.locator('#workspace').isVisible(),false);
     await fs.mkdir(path.join(__dirname,'../artifacts'),{recursive:true});
     await page.screenshot({path:path.join(__dirname,'../artifacts/supabase-login.png'),fullPage:true});
@@ -173,12 +174,29 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await page.getByRole('link',{name:'Baixar PDF',exact:true}).waitFor();
     const [generatedPDF]=await Promise.all([page.waitForEvent('download'),page.getByRole('link',{name:'Baixar PDF',exact:true}).click()]);
     await generatedPDF.saveAs(path.join(__dirname,'../artifacts/export/cloud.pdf'));
-    assert.equal((await fs.readFile(await generatedPDF.path())).subarray(0,5).toString(),'%PDF-');
+    const savedPDFBytes=await fs.readFile(await generatedPDF.path()),exportKey=[...rows.values()][0].key;
+    assert.equal(savedPDFBytes.subarray(0,5).toString(),'%PDF-');
+    assert.deepEqual(files.get(exportKey+'/generated.pdf').bytes,savedPDFBytes);
+    assert.equal((await fetch(origin+`/api/reports/${exportKey}?file=generated`)).status,401);
     const [originalPDF]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Baixar arquivo: relatorio.pdf',exact:true}).click()]);
     assert.deepEqual(await fs.readFile(await originalPDF.path()),pdf);
     await page.getByRole('button',{name:'Fechar geração de arquivo'}).click();
+    await page.evaluate(()=>{window.savedPDFGenerator=window.CentralReportPDF;window.CentralReportPDF=()=>{throw new Error('Não regenerar o PDF salvo.');};});
+    await page.getByRole('button',{name:'Gerar arquivo',exact:true}).click();await page.getByRole('link',{name:'Baixar PDF',exact:true}).waitFor();
+    const [reopenedPDF]=await Promise.all([page.waitForEvent('download'),page.getByRole('link',{name:'Baixar PDF',exact:true}).click()]);
+    assert.deepEqual(await fs.readFile(await reopenedPDF.path()),savedPDFBytes);
+    await page.getByRole('button',{name:'Fechar geração de arquivo'}).click();
+    await page.evaluate(()=>{window.CentralReportPDF=window.savedPDFGenerator;delete window.savedPDFGenerator;});
     await page.getByRole('button',{name:'Fechar detalhes'}).click(); await page.getByRole('button',{name:'Resolver ocorrência: Teste do envio online',exact:true}).click();
     await page.getByRole('button',{name:'Ocorrência resolvida: Teste do envio online',exact:true}).waitFor(); assert.equal([...rows.values()][0].status,'resolvido'); assert.equal(await page.locator('#resolved-count').innerText(),'1');
+    // Outra sessão/dispositivo recupera o primeiro PDF sem carregar o gerador nem refazer o documento.
+    const device=await browser.newPage(),deviceRequests=[];device.on('request',req=>deviceRequests.push(req.url()));
+    await device.route('https://central-test.supabase.co/**',routeSupabase);
+    await device.goto(origin);await device.getByLabel('E-mail',{exact:true}).fill('admin@example.com');await device.getByLabel('Senha',{exact:true}).fill('test-password');await device.getByRole('button',{name:'Entrar',exact:true}).click();
+    await device.getByRole('button',{name:'Abrir ocorrência: Teste do envio online',exact:true}).click();
+    await device.getByRole('button',{name:'Gerar arquivo',exact:true}).click();await device.getByRole('link',{name:'Baixar PDF',exact:true}).waitFor();
+    const [devicePDF]=await Promise.all([device.waitForEvent('download'),device.getByRole('link',{name:'Baixar PDF',exact:true}).click()]);
+    assert.deepEqual(await fs.readFile(await devicePDF.path()),savedPDFBytes);assert.equal(deviceRequests.some(url=>url.endsWith('/report-generator.bundle.js')),false);await device.close();
     await page.getByRole('searchbox').fill('Texto fora da prévia'); await page.waitForTimeout(600); assert.equal(await page.locator('.occurrence').count(),1);
     assert.equal(await page.locator('.status-column').count(),4);
     await page.getByRole('button',{name:'Central de Sistemas'}).click();
@@ -285,7 +303,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal((await fetch(origin+'/api/reports/'+legacyKey,{method:'DELETE'})).status,401);
     failDelete=true;
     assert.equal((await fetch(origin+'/api/reports/'+legacyKey,{method:'DELETE',headers:adminHeaders})).status,503);
-    assert.ok(rows.has(legacyKey)); assert.equal(files.size,3);
+    assert.ok(rows.has(legacyKey)); assert.equal(files.size,4);
     assert.equal((await fetch(origin+'/api/reports/'+legacyKey,{method:'DELETE',headers:adminHeaders})).status,200);
     assert.equal(rows.has(legacyKey),false); assert.equal(files.size,0);
     await page.getByRole('button',{name:'Ocorrências',exact:false}).filter({hasText:'▦ Ocorrências'}).click();
@@ -385,11 +403,25 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.ok(scoped.stats.every(stat=>[own.project.id,shared.project.id].includes(stat.project_id)));
     assert.equal((await (await asMember('/api/reports?search=Teste%20do%20envio%20online')).json()).reports.length,0);
     assert.equal((await asMember('/api/reports/'+survivorKey)).status,404);
+    assert.equal((await asMember('/api/reports/'+survivorKey+'?file=generated')).status,404);
+    assert.equal((await asMember('/api/reports/'+survivorKey+'?file=generated',{method:'POST',body:JSON.stringify({action:'prepare'})})).status,404);
     assert.equal((await asMember('/api/reports/'+survivorKey,{method:'PATCH',body:JSON.stringify({status:'resolvido'})})).status,404);
     assert.equal((await asMember('/api/reports/'+survivorKey,{method:'DELETE'})).status,404);
     assert.equal((await asMember('/api/reports/'+sharedKey,{method:'PATCH',body:JSON.stringify({status:'em-analise'})})).status,200);
     assert.equal((await asMember('/api/reports/'+sharedKey,{method:'DELETE'})).status,403);
     const sharedDetail=await (await asMember('/api/reports/'+sharedKey)).json(); assert.ok(sharedDetail.attachments[0].url);
+    // Validar a persistência pela API: PDF inválido é descartado e dois uploads não sobrescrevem o primeiro.
+    const ownFileURL='/api/reports/'+ownKey+'?file=generated';
+    let upload=await (await asMember(ownFileURL,{method:'POST',body:JSON.stringify({action:'prepare'})})).json();
+    assert.equal((await fetch(upload.upload.url,{method:'PUT',headers:{'Content-Type':'application/pdf'},body:'fake!'})).status,200);
+    assert.equal((await asMember(ownFileURL,{method:'POST',body:JSON.stringify({action:'commit'})})).status,400);
+    assert.equal(files.has(ownKey+'/generated.pdf'),false);
+    const [firstUpload,secondUpload]=await Promise.all([asMember(ownFileURL,{method:'POST',body:JSON.stringify({action:'prepare'})}),asMember(ownFileURL,{method:'POST',body:JSON.stringify({action:'prepare'})})]);
+    const firstSlot=await firstUpload.json(),secondSlot=await secondUpload.json();
+    assert.equal((await fetch(firstSlot.upload.url,{method:'PUT',headers:{'Content-Type':'application/pdf'},body:pdf})).status,200);
+    assert.equal((await fetch(secondSlot.upload.url,{method:'PUT',headers:{'Content-Type':'application/pdf'},body:Buffer.concat([pdf,Buffer.from('other')])})).status,409);
+    const committedFile=await (await asMember(ownFileURL,{method:'POST',body:JSON.stringify({action:'commit'})})).json();
+    assert.deepEqual(Buffer.from(await (await fetch(committedFile.file.url)).arrayBuffer()),pdf);
     assert.equal((await asMember('/api/reports?systems=1',{method:'PATCH',body:JSON.stringify({id:shared.project.id,action:'disconnect'})})).status,403);
     assert.equal((await asMember('/api/reports?systems=1',{method:'DELETE',body:JSON.stringify({id:shared.project.id})})).status,403);
     await page.getByLabel('E-mail',{exact:true}).fill('hugo@test.example');await page.getByLabel('Senha',{exact:true}).fill('test-password');await page.getByRole('button',{name:'Entrar',exact:true}).click();
@@ -408,11 +440,13 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await page.locator('#detail').waitFor({state:'hidden'});
     await page.locator('#export-dialog').waitFor({state:'hidden'});
     assert.equal(await page.locator('#export-download').getAttribute('href'),null);
+    assert.equal((await asMember('/api/reports/'+sharedKey+'?file=generated')).status,404);
     await page.waitForFunction(()=>!document.querySelector('#reports').textContent.includes('Relato compartilhado'));
     assert.equal((await asMember('/api/reports/'+sharedKey)).status,404);assert.equal((await asMember('/api/reports/'+sharedKey,{method:'PATCH',body:JSON.stringify({status:'resolvido'})})).status,404);
     assert.ok((await (await fetch(origin+'/api/reports',{headers:adminHeaders})).json()).projects.some(p=>p.id===own.project.id));
     assert.equal((await asMember('/api/reports?systems=1',{method:'PATCH',body:JSON.stringify({...ownInput,id:own.project.id,owner_id:'admin-user'})})).status,200);assert.equal(projects.find(p=>p.id===own.project.id).owner_id,memberId);
     assert.equal((await asMember('/api/reports/'+ownKey,{method:'DELETE'})).status,200);
+    assert.equal(files.has(ownKey+'/generated.pdf'),false);
     await page.getByRole('button',{name:'Sair',exact:true}).click();await page.getByRole('heading',{name:'Entre na sua Central'}).waitFor();assert.equal(await page.locator('#detail-content').innerText(),'');
     assert.deepEqual(errors,[]);
     console.log('OK: login/admin, CORS, upload/retry, detalhes/busca, quatro etapas, cadastro/edição, contas específicas/todas autenticadas, revogação entre modos, múltiplas contas, ID secreto/rotação, origem e conta verificadas, exclusão completa e recuperação de falha do Storage, cancelamento Sim/Não, desconexão, exclusão de sistema com mais de 200 registros/pendências e isolamento.');
