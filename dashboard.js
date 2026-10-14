@@ -337,6 +337,7 @@
   $('#close-system').onclick=()=>$('#system-dialog').close(); $('#close-integration').onclick=()=>$('#integration-dialog').close();
   $('#integration-dialog').addEventListener('close',()=>{ $('#access-id').textContent=''; $('#integration-instructions').textContent=''; });
   $('#copy-integration').onclick=async()=>{try{await navigator.clipboard.writeText($('#integration-instructions').textContent);$('#copy-message').textContent='Instruções copiadas. Guarde o ID em local seguro.';}catch{$('#copy-message').textContent='Selecione e copie as instruções abaixo manualmente.';}};
+  $('#copy-repository').onclick=async()=>{try{await navigator.clipboard.writeText($('#repository-link').href);$('#repository-copy-message').textContent='Link copiado!';}catch{$('#repository-copy-message').textContent='Não foi possível copiar. Copie o endereço acima manualmente.';}};
   $('#delete-old').onclick=async()=>{
     if(deleting)return; const current=epoch; $('#delete-old').disabled=true;
     try {
