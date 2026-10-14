@@ -2,6 +2,8 @@
 const http = require('node:http');
 const registry = require('./registry.cjs');
 const { widgetRelease } = require('./scripts/widget-release.cjs');
+const { buildReport } = require('./scripts/build-report.cjs');
+let reportBundle;
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -176,6 +178,11 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
         if (!file || file.unavailable) { json(res, 404, { error: 'Arquivo indisponível.' }); return; }
         const bytes = await fs.readFile(path.join(dataDir, attachmentMatch[1], attachmentMatch[2]));
         res.writeHead(200, { 'Content-Type': file.type, 'Content-Security-Policy': "default-src 'none'; sandbox" }); res.end(bytes); return;
+      }
+      if (req.method === 'GET' && url.pathname === '/report-generator.bundle.js') {
+        reportBundle ||= buildReport().catch(error => { reportBundle = null; throw error; });
+        const bytes = await reportBundle;
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8'); res.end(bytes); return;
       }
       const staticFiles = { '/': ['index.html', 'text/html'], '/dashboard.js': ['dashboard.js', 'application/javascript'],
         '/dashboard.css': ['dashboard.css', 'text/css'], '/central-bugs.js': ['central-bugs.js', 'application/javascript'],

@@ -11,6 +11,87 @@
   let projects = [], editingSystem = null, systemAction = null, deleting = false, deletionRecords = [], revision = 0;
   let records = [], stats = [], selectedSystem = '', loading = false, fingerprint = '', active = !cloud, epoch = 0;
   let isPrimary=!cloud, accountId=null, detailProject=null, supervisorAccounts=[];
+  let exportController = null, pdfLoader = null, exportURLs = [];
+  function clearExport() {
+    exportController?.abort(); exportController = null;
+    for (const url of exportURLs) URL.revokeObjectURL(url);
+    exportURLs = []; $('#export-download').removeAttribute('href');
+    $('#export-download').removeAttribute('download'); $('#export-filename').textContent = '';
+    $('#export-result').hidden = true; $('#export-retry').hidden = true;
+    $('#export-attachments').replaceChildren(); $('#export-attachments-section').hidden = true;
+    $('#export-message').textContent = ''; $('#export-report-name').textContent = '';
+  }
+  function loadPDF() {
+    if (window.CentralReportPDF) return Promise.resolve();
+    if (!pdfLoader) pdfLoader = new Promise((resolve, reject) => {
+      const script = element('script'); script.src = '/report-generator.bundle.js';
+      const timer = setTimeout(() => failed(), 30000);
+      function failed() { clearTimeout(timer); script.remove(); reject(new Error('Não foi possível carregar o gerador. Tente novamente.')); }
+      script.onerror = failed;
+      script.onload = () => { clearTimeout(timer); script.remove(); window.CentralReportPDF ? resolve() : failed(); };
+      document.head.append(script);
+    }).catch(error => { pdfLoader = null; throw error; });
+    return pdfLoader;
+  }
+  function exportURL(blob) { const url = URL.createObjectURL(blob); exportURLs.push(url); return url; }
+  async function generateFile(key) {
+    clearExport(); const current = epoch, controller = new AbortController(); exportController = controller;
+    const valid = () => current === epoch && !controller.signal.aborted && active;
+    const progress = message => { if (valid()) $('#export-message').textContent = message; };
+    $('#export-retry').onclick = () => generateFile(key);
+    if (!$('#export-dialog').open) $('#export-dialog').showModal();
+    progress('Preparando os dados da ocorrência…');
+    try {
+      // Consultar os detalhes completos: a lista online contém apenas um resumo e não contém os anexos.
+      const item = structuredClone(cloud ? await api(`/api/reports/${key}`) : records.find(record => record.key === key));
+      if (!valid()) return;
+      if (!item) throw new Error('Ocorrência não encontrada. Atualize a Central.');
+      $('#export-report-name').textContent = item.report.title;
+      for (const [index, file] of item.attachments.entries()) {
+        if (file.type.startsWith('image/')) continue;
+        const row = element('div', undefined, 'export-file'), info = element('div');
+        info.append(element('strong', file.name), element('span', `${(file.size / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`, 'muted'));
+        row.append(info);
+        if (file.unavailable) row.append(element('span', 'Arquivo original indisponível.', 'muted'));
+        else {
+          const button = element('button', 'Baixar arquivo', 'button'), message = element('p', '');
+          button.setAttribute('aria-label', `Baixar arquivo: ${file.name}`); message.setAttribute('role', 'status');
+          button.onclick = async () => {
+            button.disabled = true; message.textContent = 'Preparando download…';
+            try {
+              const latest = cloud ? await api(`/api/reports/${key}`) : item;
+              if (!valid()) return;
+              const attachment = latest.attachments[index];
+              if (!attachment || attachment.unavailable) throw new Error('Arquivo indisponível.');
+              const response = await fetch(attachment.url, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]) });
+              if (!response.ok) throw new Error('Falha ao baixar. Tente novamente.');
+              const blob = await response.blob(); if (!valid()) return;
+              const anchor = element('a'); anchor.href = exportURL(blob); anchor.download = file.name;
+              row.append(anchor); anchor.click(); anchor.remove(); message.textContent = 'Download iniciado.';
+            } catch (error) { if (valid()) message.textContent = error.message; }
+            finally { if (valid()) button.disabled = false; }
+          };
+          row.append(button, message);
+        }
+        $('#export-attachments').append(row); $('#export-attachments-section').hidden = false;
+      }
+      progress('Carregando o gerador de PDF…'); await loadPDF(); if (!valid()) return;
+      const blob = await window.CentralReportPDF(item, {
+        type: types[item.report.type], status: states[item.status], company: companyName(item.report.projectId), system: systemName(item.report.projectId)
+      }, controller.signal, progress);
+      if (!valid()) return;
+      const slug = item.report.title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'ocorrencia';
+      const filename = `${slug}-${key.slice(0, 8)}.pdf`;
+      $('#export-download').href = exportURL(blob); $('#export-download').download = filename;
+      $('#export-filename').textContent = filename; $('#export-result').hidden = false;
+      progress(item.attachments.some(file => file.unavailable) ? 'PDF gerado. Os anexos indisponíveis estão identificados no documento.' : 'PDF pronto para baixar e enviar.');
+    } catch (error) {
+      if (valid()) { progress(error.message || 'Não foi possível gerar o arquivo. Tente novamente.'); $('#export-retry').hidden = false; }
+    }
+  }
+  $('#close-export').onclick = () => $('#export-dialog').close();
+  $('#export-dialog').addEventListener('close', clearExport);
+  $('#detail').addEventListener('close', () => { $('#export-dialog').close(); clearExport(); });
   const canManage=id=>projects.some(project=>project.id===id && project.canManage!==false);
   const urlScope=()=>{const ids=new URLSearchParams(location.search).get('systems');return ids ? new Set(ids.split(',').slice(0,100).filter(id=>/^[\w-]{1,100}$/.test(id))) : null;};
   let notificationScope=urlScope();
@@ -167,7 +248,10 @@
     const meta = element('div', undefined, 'detail-meta');
     meta.append(element('span', types[report.type], `badge ${report.type}`), element('span', systemName(report.projectId)), element('span', `Recebido em ${date(item.receivedAt)}`));
     container.append(meta, title);
-    const remove=element('button','Apagar ocorrência e anexos','button danger'); remove.onclick=()=>deleteOne(item,remove); if(canManage(report.projectId)) container.append(remove);
+    const actions = element('div', undefined, 'detail-actions'), generate = element('button', 'Gerar arquivo', 'button primary');
+    generate.onclick = () => generateFile(key); actions.append(generate);
+    const remove=element('button','Apagar ocorrência e anexos','button danger'); remove.onclick=()=>deleteOne(item,remove); if(canManage(report.projectId)) actions.append(remove);
+    container.append(actions);
     if (item.recoveryNote) container.append(element('p', item.recoveryNote, 'detail-note'));
     const statusRow = element('div', undefined, 'detail-status'), label = element('label', 'Status da ocorrência'), select = element('select');
     select.id = 'occurrence-status'; label.htmlFor = select.id;
@@ -179,6 +263,7 @@
       try {
         const saved = await saveStatus(key, select.value);
         item.status = saved.status; statusMessage.textContent = 'Status salvo.';
+        item.updatedAt = saved.updatedAt;
       } catch { select.value = item.status; statusMessage.textContent = 'Falha ao salvar. Tente novamente.'; }
       finally { select.disabled = false; }
     };
