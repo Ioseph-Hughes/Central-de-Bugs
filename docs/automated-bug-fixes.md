@@ -73,9 +73,15 @@ A conexão Vercel foi confirmada no projeto `central-de-bugs`, da equipe
 cadastradas em produção; seus valores secretos não foram lidos. As variáveis
 `BUGFIX_APP_ID`, `BUGFIX_APP_PRIVATE_KEY` e `BUGFIX_REPOSITORIES` ainda não existem.
 
-A integração completa ainda não está ativa: GitHub com escrita/administração,
-Apps e chave OpenAI continuam pendentes. Nenhum App, segredo, regra do GitHub,
-push, merge ou deployment foi criado nesta etapa.
+O acesso GitHub foi corrigido selecionando a conta já autenticada
+`Ioseph-Hughes` no GitHub CLI; a conta anteriormente ativa era `MVPcontratos`.
+A API confirmou escrita e administração do repositório para a conta selecionada.
+Não foi necessário reinstalar o plugin nem ampliar permissões de tokens.
+
+A integração completa ainda não está ativa: Apps, seus segredos e a chave OpenAI
+continuam pendentes. O repositório não possui Actions Secrets ou Variables
+cadastrados. A proteção da principal também precisa ser configurada antes de
+habilitar a automação. Nenhum merge ou deployment foi feito nesta etapa.
 
 ### 1. Banco
 
@@ -156,9 +162,10 @@ humana, CI `CI / test`, sem force-push, sem exclusão e sem bypass para os Apps.
 Exija também que a branch esteja atualizada com a principal antes do merge.
 Não coloque nenhum App na lista de bypass. Garanta que a integração Vercel não
 publique previews das branches Codex (a configuração local já exclui `codex/*`).
-Esta sessão confirmou `main` como padrão, repositório público e acesso GitHub
-somente de leitura. A API de proteção retornou 404; isso **não comprova ausência
-de proteção**. Somente um administrador pode verificar/configurar a ruleset.
+Esta sessão confirmou `main` como padrão e repositório público. Após selecionar
+a conta proprietária já autenticada, a API confirmou `admin: true`, nenhuma
+ruleset e `Branch not protected` para `main`. Configure a proteção antes da
+ativação completa; nenhuma regra de proteção foi enfraquecida nesta tarefa.
 
 ## Limites e recuperação
 
