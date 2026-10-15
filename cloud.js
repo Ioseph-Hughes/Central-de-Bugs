@@ -1,11 +1,16 @@
 // Empacotado somente para a publicação com Supabase. O widget continua independente.
 import { createClient } from '@supabase/supabase-js';
 const client = createClient(CENTRAL_CONFIG.url,CENTRAL_CONFIG.key,{auth:{storageKey:'central-admin-session'}});
+async function sessionToken() {
+  const {data,error} = await client.auth.getSession();
+  if (error || !data.session) throw new Error('Entre no painel para acessar as ocorrências.');
+  return data.session.access_token;
+}
 window.CentralCloud = {
+  async widgetAccess() { return {token:await sessionToken()}; },
   async api(url,options = {}) {
-    const { data,error } = await client.auth.getSession();
-    if (error || !data.session) throw new Error('Entre no painel para acessar as ocorrências.');
-    const response = await fetch(url,{...options,headers:{...options.headers,Authorization:`Bearer ${data.session.access_token}`},signal:AbortSignal.timeout(30000)});
+    const token=await sessionToken();
+    const response = await fetch(url,{...options,headers:{...options.headers,Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(30000)});
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || `Erro ${response.status}.`);
     return payload;

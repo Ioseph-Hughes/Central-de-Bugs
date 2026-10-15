@@ -1,6 +1,7 @@
 // Painel e receptor local compartilham a mesma caixa de entrada em disco.
 const http = require('node:http');
 const registry = require('./registry.cjs');
+const {validateRequest:validateFixRequest} = require('./bug-fixes.cjs');
 const { widgetRelease } = require('./scripts/widget-release.cjs');
 const { buildReport } = require('./scripts/build-report.cjs');
 let reportBundle;
@@ -26,6 +27,7 @@ function validate(report, files) {
     !files.every(file => typeof file.arrayBuffer === 'function' && attachmentTypes.has(file.type) && file.size > 0)) {
     throw Object.assign(new Error('Relato ou anexos inválidos.'), { status: 400 });
   }
+  validateFixRequest(report);
 }
 function validAttachment(bytes, type) {
   if (type === 'application/pdf') return bytes.subarray(0, 5).equals(Buffer.from('%PDF-'));
@@ -160,7 +162,7 @@ async function createCentralServer({ dataDir = path.join(root, 'data'), allowedO
             records.set(key, saved); return saved;
           } catch (error) { await fs.rm(temporary, { recursive: true, force: true }); throw error; }
         });
-        json(res, 201, { id: record.report.id, key }); return;
+        json(res, 201, { id: record.report.id, key,...(record.report.autoFix ? {autoFix:{state:'unavailable',message:'Relato salvo. A correção pelo Codex funciona na Central online após a configuração pelo administrador.'}} : {}) }); return;
       }
       const statusMatch = url.pathname.match(/^\/api\/reports\/([a-f0-9]{64})$/);
       if (statusMatch && url.searchParams.get('file') === 'generated') {

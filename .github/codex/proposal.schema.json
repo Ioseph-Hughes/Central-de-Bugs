@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "summary", "patch"],
+  "properties": {
+    "status": {"type": "string", "enum": ["fixed", "blocked"]},
+    "summary": {"type": "string"},
+    "patch": {"type": "string"}
+  }
+}

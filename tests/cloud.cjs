@@ -4,6 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
+const {generateKeyPairSync} = require('node:crypto');
 const { chromium } = require('playwright');
 const pdf = require('./pdf-fixture.cjs');
 const { createClient } = require('@supabase/supabase-js');
@@ -13,6 +14,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 (async () => {
   const output = await fs.mkdtemp(path.join(os.tmpdir(),'central-cloud-'));
   const rows = new Map(), files = new Map(), uploadTokens = new Set(), payloads = [];
+  const fixJobs = new Map(), fixCalls = [], fixEnv = {};
   let origin, handler, failCommit = false, failDelete = false, browser;
   const memberId='10000000-0000-0000-0000-000000000002';
   const members=[{user_id:'admin-user',is_primary:true},{user_id:memberId,is_primary:false}];
@@ -61,6 +63,18 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
           if (existing && existing.digest!==b.p_digest) return json(res,400,{code:'P0001',message:'draft_conflict'});
           if (!existing) rows.set(b.p_key,{key:b.p_key,project_id:b.p_project,report:b.p_report,attachments:b.p_attachments,digest:b.p_digest,status:'novo',received_at:new Date().toISOString(),ready:false});
           return json(res,200,[rows.get(b.p_key)]);
+        }
+        if (p.endsWith('/rpc/central_claim_bug_fix')) {
+          const b=JSON.parse(await read(req));const old=fixJobs.get(b.p_fingerprint);
+          if(old) return json(res,200,[{...old,claimed:false}]);
+          assert.equal(rows.get(b.p_key).ready,true);
+          const job={fingerprint:b.p_fingerprint,report_key:b.p_key,repository:b.p_repository,state:'creating'};
+          fixJobs.set(job.fingerprint,job);return json(res,200,[{...job,claimed:true}]);
+        }
+        if (p.endsWith('/central_bug_fix_jobs')) {
+          const selected=[...fixJobs.values()].filter(row=>['fingerprint','report_key'].every(key=>!url.searchParams.has(key) || url.searchParams.get(key)===`eq.${row[key]}`));
+          if(req.method==='PATCH') {const input=JSON.parse(await read(req));for(const row of selected)Object.assign(row,input);}
+          return json(res,200,selected);
         }
         if (p.endsWith('/central_reports')) {
           let selected=[...rows.values()];
@@ -120,7 +134,13 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve)); origin=`http://127.0.0.1:${server.address().port}`;
   const client=createClient(origin,'sb_secret_TEST',{auth:{persistSession:false,autoRefreshToken:false}});
-  handler=createHandler({client,secret:'sb_secret_TEST',centralOrigin:origin,supabaseURL:origin});
+  const githubRequest=async(url,options)=>{
+    fixCalls.push({url,body:JSON.parse(options.body)});
+    if(url.endsWith('/access_tokens'))return Response.json({token:'ephemeral-test'});
+    if(url.endsWith('/issues'))return Response.json({number:12});
+    assert.ok(url.endsWith('/issues/12/labels'));return Response.json([]);
+  };
+  handler=createHandler({client,secret:'sb_secret_TEST',centralOrigin:origin,supabaseURL:origin,bugFixOptions:{env:fixEnv,request:githubRequest}});
   try {
     let unavailable;
     await createHandler()({headers:{}},{setHeader(){},writeHead(status){unavailable=status;},end(){}});
@@ -148,6 +168,7 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.equal(await page.locator('[data-central-bugs]').count(),0);
     await page.getByLabel('E-mail',{exact:true}).fill('admin@example.com'); await page.getByLabel('Senha',{exact:true}).fill('test-password'); await page.getByRole('button',{name:'Entrar',exact:true}).click();
     await page.getByRole('button',{name:'Testar o widget'}).waitFor();
+    assert.equal((await page.evaluate(()=>CentralCloud.widgetAccess())).token,'admin-token');
     await fs.mkdir(path.join(__dirname,'../artifacts'),{recursive:true});
     await page.getByRole('button',{name:'Testar o widget'}).click(); const widget=page.locator('[data-central-bugs]');
     await widget.getByRole('button',{name:'Relatar um bug'}).click(); await widget.getByLabel('Título',{exact:true}).fill('Teste do envio online');
@@ -250,10 +271,27 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     for(const invalid of [undefined,'','sem-email']) assert.equal((await exchange(invalid)).status,403);
     assert.equal((await fetch(origin+'/api/reports?widget=access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({accessId,email:'outra@example.com',origin:'https://outro.example'})})).status,403);
     const anyGrant=await (await exchange('outra@example.com')).json(); assert.equal(anyGrant.user.email,'outra@example.com');
-    const anyReport={...restrictedReport,id:'any-account-report'};
+    const anyReport={...restrictedReport,id:'any-account-report',autoFix:true,diagnostics:{steps:'Clicar em salvar'}};
+    assert.equal((await restrictedPost({action:'prepare',report:anyReport},'')).status,403);
     const anyPrepared=await (await restrictedPost({action:'prepare',report:anyReport},anyGrant.token)).json();
     assert.equal(rows.get(anyPrepared.key).report.user.email,'outra@example.com');
-    assert.equal((await restrictedPost({action:'commit',key:anyPrepared.key,receipt:anyPrepared.receipt},anyGrant.token)).status,201);
+    const fixCommit=await restrictedPost({action:'commit',key:anyPrepared.key,receipt:anyPrepared.receipt},anyGrant.token);
+    assert.equal(fixCommit.status,201); assert.equal((await fixCommit.json()).autoFix.state,'unavailable');
+    assert.equal(rows.get(anyPrepared.key).ready,true); // Falta de configuração não perde o bug.
+    // Ativação posterior e retry do mesmo relato: conta comum inicia via o App do servidor.
+    const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048});
+    Object.assign(fixEnv,{BUGFIX_APP_ID:'1',BUGFIX_APP_PRIVATE_KEY:privateKey.export({type:'pkcs8',format:'pem'}),
+      BUGFIX_REPOSITORIES:JSON.stringify({[registered.id]:{repository:'test/saas',installationId:'1'}})});
+    const fixedPrepared=await (await restrictedPost({action:'prepare',report:anyReport},anyGrant.token)).json();
+    assert.equal(fixedPrepared.ready,true);assert.equal(fixedPrepared.autoFix.state,'queued');
+    assert.equal(fixedPrepared.autoFix.issueURL,'https://github.com/test/saas/issues/12');
+    await restrictedPost({action:'commit',key:anyPrepared.key,receipt:anyPrepared.receipt},anyGrant.token);
+    assert.equal(fixCalls.filter(call=>call.url.endsWith('/issues')).length,1);
+    assert.deepEqual(fixCalls.at(-1).body.labels,['codex-fix']);
+    const issueBody=fixCalls.find(call=>call.url.endsWith('/issues')).body.body;
+    assert.ok(!issueBody.includes('outra@example.com'));assert.ok(!issueBody.includes('forjado@example.com'));
+    const fixDetail=await (await fetch(origin+'/api/reports/'+anyPrepared.key,{headers:adminHeaders})).json();
+    assert.equal(fixDetail.autoFix.state,'queued');
     assert.equal((await fetch(origin+'/api/reports/'+anyPrepared.key,{method:'DELETE',headers:adminHeaders})).status,200);
     const pendingAny=await (await restrictedPost({action:'prepare',report:{...anyReport,id:'pending-any-account'}},anyGrant.token)).json();
     await page.getByRole('button',{name:'Editar sistema: Sistema cadastrado'}).click();await page.locator('#system-dialog').waitFor({state:'visible'});
@@ -366,6 +404,8 @@ const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     assert.deepEqual(errors,[]);
     const report={...payloads[0],id:'invalid-image',attachments:[{name:'fake.png',type:'image/png',size:5}]};
     const post=async body=>fetch(origin+'/api/reports',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    assert.equal((await post({action:'prepare',report:{...report,id:'anonymous-paid-request',attachments:[],autoFix:true}})).status,401);
+    assert.equal((await post({action:'prepare',report:{...report,id:'invalid-paid-request',attachments:[],type:'melhoria',autoFix:true}})).status,400);
     result=await post({action:'prepare',report}); const prepared=await result.json(); assert.equal(result.status,200);
     await fetch(prepared.uploads[0].url,{method:'PUT',headers:{'Content-Type':'image/png'},body:'fake!'});
     result=await post({action:'commit',key:prepared.key,receipt:prepared.receipt}); assert.equal(result.status,400); assert.equal(rows.get(prepared.key).ready,false); assert.equal(files.has(`${prepared.key}/0`),false);

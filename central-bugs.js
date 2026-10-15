@@ -52,6 +52,7 @@
     .choice:hover { border-color: #55745d; background: #f4f6ee; } .choice strong { display: block; }
     .badge { background: #f8ece6; color: #a74931; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 20px; }
     label { display: block; font-weight: 600; margin: 18px 0 6px; } input, textarea, select { width: 100%; background: white; color: #202624; border: 1px solid #d9dfd5; border-radius: 9px; padding: 11px; }
+    .auto-fix-option { margin-top: 16px; } .auto-fix[aria-pressed="true"] { outline: 2px solid #ba5039; outline-offset: 2px; }
     textarea { resize: vertical; min-height: 120px; }
     .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .row label { margin: 0; }
     .secondary { border: 1px solid #d9dfd5; border-radius: 9px; padding: 9px 12px; color: #344d3d; background: white; }
@@ -133,6 +134,16 @@
               <button type="button" class="back">← Alterar tipo de relato</button>
               <label for="cb-summary">Título</label><input id="cb-summary" name="title" placeholder="Resuma o que você quer nos contar" required>
               <label for="cb-text">O que aconteceu?</label><textarea id="cb-text" name="description" placeholder="Descreva o problema, o que você esperava ou sua ideia…" required></textarea>
+              <div class="auto-fix-option">
+                <button type="button" class="secondary auto-fix" aria-pressed="false" aria-controls="cb-fix-details">Resolver imediatamente</button>
+                <div id="cb-fix-details" hidden>
+                  <p class="muted">Ao enviar, o Codex tentará corrigir o bug e preparar uma proposta para revisão humana. A correção não é instantânea. O texto será enviado ao GitHub configurado para este sistema; não inclua dados pessoais ou segredos.</p>
+                  <label for="cb-steps">Passos para reproduzir · opcional</label><textarea id="cb-steps" name="steps"></textarea>
+                  <label for="cb-expected">Resultado esperado · opcional</label><textarea id="cb-expected" name="expected"></textarea>
+                  <label for="cb-observed">Resultado observado · opcional</label><textarea id="cb-observed" name="observed"></textarea>
+                  <label for="cb-logs">Mensagens de erro · opcional</label><textarea id="cb-logs" name="logs" placeholder="Revise e remova informações sensíveis antes de colar."></textarea>
+                </div>
+              </div>
               <label>Imagens e PDFs <span class="muted">· opcional</span></label>
               <div class="row"><button type="button" class="secondary upload">＋ Adicionar arquivos</button></div>
               <div class="row" style="margin-top:8px"><button type="button" class="secondary capture-area">✂ Selecionar área</button><button type="button" class="secondary capture">▣ Tela inteira</button></div>
@@ -239,9 +250,11 @@
     function clearDraft() {
       for (const item of attachments) URL.revokeObjectURL(item.url);
       attachments = []; form.reset(); renderAttachments(); draftId = crypto.randomUUID(); submittedDraft = undefined;
+      $('.auto-fix').setAttribute('aria-pressed','false'); $('#cb-fix-details').hidden = true;
     }
     function choose(nextType) {
       type = nextType; $('.choices').hidden = true; form.hidden = false;
+      $('.auto-fix-option').hidden = type !== 'bug';
       $('#cb-title').textContent = { bug: 'Vamos resolver esse bug.', melhoria: 'Qual é a sua ideia?', ajuste: 'Qual detalhe podemos ajustar?' }[type];
       $('#cb-text').previousElementSibling.textContent = type === 'bug' ? 'O que aconteceu?' : 'Conte mais sobre sua sugestão';
       message(); $('#cb-summary').focus();
@@ -253,6 +266,10 @@
     on($('.collapse'), 'click', hide); on($('.close'), 'click', close); on($('.hide'), 'click', hide);
     on($('#cb-position'), 'change', event => setPosition(event.target.value));
     root.querySelectorAll('[data-type]').forEach(button => on(button, 'click', () => choose(button.dataset.type)));
+    on($('.auto-fix'),'click',()=>{
+      const enabled = $('.auto-fix').getAttribute('aria-pressed') !== 'true';
+      $('.auto-fix').setAttribute('aria-pressed',String(enabled)); $('#cb-fix-details').hidden = !enabled;
+    });
     on($('.back'), 'click', () => { form.hidden = true; $('.choices').hidden = false; $('#cb-title').textContent = 'Seu feedback faz diferença.'; message(); $('[data-type]').focus(); });
     on($('.upload'), 'click', () => $('.file-input').click());
     on($('.file-input'), 'change', event => { addFiles(event.target.files); event.target.value = ''; });
@@ -401,12 +418,15 @@
       if (!title.trim() || !description.trim()) { message('Preencha o título e a descrição.'); return; }
       const links = []; // Mantém o formato dos relatos anteriores; a URL da página permanece em context.
       if (!config.endpoint && typeof config.onSubmit !== 'function') { message('O envio ainda não está configurado. Seu relato continua aqui.'); return; }
-      const signature = JSON.stringify({ type, title, description, links, user: config.user });
+      const autoFix = type === 'bug' && $('.auto-fix').getAttribute('aria-pressed') === 'true';
+      const diagnostics = autoFix ? Object.fromEntries(['steps','expected','observed','logs'].map(key=>[key,form.elements[key].value])) : undefined;
+      const signature = JSON.stringify({ type, title, description, links, autoFix, diagnostics, user: config.user });
       const files = attachments.map(item => item.file);
       const unchanged = submittedDraft && submittedDraft.signature === signature && submittedDraft.files.length === files.length && files.every((file,index) => file === submittedDraft.files[index]);
       if (submittedDraft && !unchanged) draftId = crypto.randomUUID();
       const report = unchanged ? submittedDraft.report : {
         schemaVersion: 1, id: draftId, projectId: config.projectId, type, title, description, links,
+        ...(autoFix ? {autoFix:true,diagnostics} : {}),
         createdAt: new Date().toISOString(),
         context: { url: location.href, pageTitle: document.title, language: navigator.language, viewport: { width: innerWidth, height: innerHeight } },
         ...(config.user ? { user: config.user } : {}),
@@ -414,14 +434,14 @@
       };
       submittedDraft = { signature, files, report };
       busy = true; $('fieldset').disabled = true; $('.submit').textContent = 'Enviando…'; message();
-      let timeout;
+      let timeout, delivery;
       try {
         pendingRequest = new AbortController();
         async function accessHeaders() {
           if (config.refreshAccess) config.token = (await config.refreshAccess(pendingRequest.signal)).token;
           return config.token ? {Authorization:`Bearer ${config.token}`} : {};
         }
-        if (typeof config.onSubmit === 'function') await config.onSubmit({ report, files: attachments.map(item => item.file) });
+        if (typeof config.onSubmit === 'function') delivery = await config.onSubmit({ report, files: attachments.map(item => item.file) });
         else if (config.transport === 'signed-upload') {
           async function requestJSON(value) {
             const headers=await accessHeaders();
@@ -431,6 +451,7 @@
             return payload;
           }
           const prepared = await requestJSON({ action: 'prepare', report });
+          delivery = prepared;
           if (!prepared.ready) {
             if (!Array.isArray(prepared.uploads) || prepared.uploads.length !== files.length) throw new Error('A Central retornou uma preparação de envio inválida.');
             for (const [index,slot] of prepared.uploads.entries()) {
@@ -440,7 +461,7 @@
               const response = await fetch(url, { method: 'PUT', headers: { 'Content-Type': files[index].type, 'x-upsert': 'false' }, body: files[index], signal: AbortSignal.any([pendingRequest.signal, AbortSignal.timeout(120000)]) });
               if (!response.ok) throw new Error(`Não foi possível enviar o anexo ${index + 1}. Tente novamente.`);
             }
-            await requestJSON({ action: 'commit', key: prepared.key, receipt: prepared.receipt });
+            delivery = await requestJSON({ action: 'commit', key: prepared.key, receipt: prepared.receipt });
           }
         }
         else {
@@ -449,8 +470,13 @@
           const headers=await accessHeaders(); timeout = setTimeout(() => pendingRequest?.abort(), 30000);
           const response = await fetch(config.endpoint, { method: 'POST', body, headers, signal: pendingRequest.signal });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          if (response.headers.get('content-type')?.includes('application/json')) delivery = await response.json();
         }
-        if (!destroyed) { clearDraft(); message(config.successMessage || 'Relato enviado. Obrigado por ajudar a melhorar o sistema!', true); }
+        if (!destroyed) {
+          clearDraft();
+          const fixMessage = delivery?.autoFix?.message || (autoFix ? 'O receptor recebeu a solicitação de correção. Consulte a Central para acompanhar.' : '');
+          message([config.successMessage || 'Relato enviado. Obrigado por ajudar a melhorar o sistema!',fixMessage].filter(Boolean).join('\n'), true);
+        }
       } catch (error) {
         if (!destroyed) message(`${config.transport === 'signed-upload' && error.name === 'Error' ? error.message + '\n' : ''}Não foi possível enviar. Seu texto e seus anexos foram preservados. Tente novamente.`);
       } finally {

@@ -292,6 +292,16 @@
     statusRow.append(label, select, statusMessage); container.append(statusRow);
     function section(title) { const section = element('section', undefined, 'detail-section'); section.append(element('h3', title)); container.append(section); return section; }
     section('Descrição completa').append(element('p', report.description, 'description'));
+    if (report.autoFix) {
+      const fix = section('Correção com Codex');
+      fix.append(element('p', item.autoFix?.message || 'Correção solicitada no envio. Consulte a configuração da Central.', 'detail-note'));
+      if (/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+$/.test(item.autoFix?.issueURL || '')) {
+        const link = safeLink(item.autoFix.issueURL); link.textContent = 'Acompanhar Issue e proposta no GitHub'; fix.append(link);
+      }
+      for (const [key,title] of Object.entries({steps:'Passos para reproduzir',expected:'Resultado esperado',observed:'Resultado observado',logs:'Mensagens de erro'})) {
+        if (report.diagnostics?.[key]) { fix.append(element('h4',title),element('p',report.diagnostics[key],'description')); }
+      }
+    }
     const attachments = section(`Anexos (${item.attachments.length})`), gallery = element('div', undefined, 'gallery');
     if (!item.attachments.length) attachments.append(element('p', 'Nenhum arquivo anexado.', 'muted'));
     for (const file of item.attachments) {
@@ -515,7 +525,7 @@
     $('#admin-role').textContent=isPrimary?'Conta principal':'Seus sistemas e supervisões';
     $('#open').hidden=cloud && !isPrimary;
     if(cloud)void window.CentralNotifications?.start({userId,api});
-    if(isPrimary) {window.feedback = CentralBugs.init({ projectId: 'central-demo', endpoint: '/api/reports', ...(cloud ? {transport:'signed-upload'} : {}), successMessage: 'Relato salvo na Central! Ele aparecerá na caixa de entrada.' });$('#open').onclick = () => feedback.open();} refresh();
+    if(isPrimary) {window.feedback = CentralBugs.init({ projectId: 'central-demo', endpoint: '/api/reports', ...(cloud ? {transport:'signed-upload',refreshAccess:()=>CentralCloud.widgetAccess()} : {}), successMessage: 'Relato salvo na Central! Ele aparecerá na caixa de entrada.' });$('#open').onclick = () => feedback.open();} refresh();
   }
   if (cloud) {
     $('.sidebar-footer').replaceChildren(element('span','Central online'),element('small','Relatos privados · Supabase'));

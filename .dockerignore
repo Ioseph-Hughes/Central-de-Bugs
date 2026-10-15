@@ -1,0 +1,11 @@
+.git
+node_modules
+data
+artifacts
+dist
+.env
+.env.*
+.vercel
+validated
+proposal
+supabase/.temp
