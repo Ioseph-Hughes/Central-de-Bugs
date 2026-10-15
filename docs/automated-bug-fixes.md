@@ -68,9 +68,14 @@ A verificação confirmou RLS ativa, acesso à tabela/RPC somente pelo servidor 
 nenhum acesso de `anon` ou `authenticated`. O aviso informativo de RLS sem
 políticas é esperado para essa tabela exclusiva do servidor.
 
+A conexão Vercel foi confirmada no projeto `central-de-bugs`, da equipe
+`ioseph-hughes`. As quatro variáveis existentes de Supabase/origem estão
+cadastradas em produção; seus valores secretos não foram lidos. As variáveis
+`BUGFIX_APP_ID`, `BUGFIX_APP_PRIVATE_KEY` e `BUGFIX_REPOSITORIES` ainda não existem.
+
 A integração completa ainda não está ativa: GitHub com escrita/administração,
-conexão Vercel, Apps e chave OpenAI continuam pendentes. Nenhum App, segredo,
-regra do GitHub, push, merge ou deployment foi criado nesta etapa.
+Apps e chave OpenAI continuam pendentes. Nenhum App, segredo, regra do GitHub,
+push, merge ou deployment foi criado nesta etapa.
 
 ### 1. Banco
 
