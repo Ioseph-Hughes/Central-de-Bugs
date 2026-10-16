@@ -80,8 +80,16 @@ Não foi necessário reinstalar o plugin nem ampliar permissões de tokens.
 
 A integração completa ainda não está ativa: Apps, seus segredos e a chave OpenAI
 continuam pendentes. O repositório não possui Actions Secrets ou Variables
-cadastrados. A proteção da principal também precisa ser configurada antes de
-habilitar a automação. Nenhum merge ou deployment foi feito nesta etapa.
+cadastrados. A proteção da principal foi aplicada e verificada: PR com uma
+aprovação humana, check `test` do GitHub Actions, branch atualizada, regras
+também para administradores, sem force-push ou exclusão e com resolução das
+conversas obrigatória. Nenhum merge ou deployment foi feito nesta etapa.
+
+O cadastro dos Apps foi aberto na conta `Ioseph-Hughes`, mas o GitHub exigiu
+confirmação da identidade por e-mail (sudo mode). Essa confirmação está pendente
+na aba do navegador. O App de recebimento e o App de publicação ainda não foram
+criados. A integração OpenAI Developers foi sugerida para permitir a configuração
+da chave API pela conexão oficial, mas ainda não está confirmada nesta sessão.
 
 ### 1. Banco
 
@@ -162,10 +170,14 @@ humana, CI `CI / test`, sem force-push, sem exclusão e sem bypass para os Apps.
 Exija também que a branch esteja atualizada com a principal antes do merge.
 Não coloque nenhum App na lista de bypass. Garanta que a integração Vercel não
 publique previews das branches Codex (a configuração local já exclui `codex/*`).
-Esta sessão confirmou `main` como padrão e repositório público. Após selecionar
-a conta proprietária já autenticada, a API confirmou `admin: true`, nenhuma
-ruleset e `Branch not protected` para `main`. Configure a proteção antes da
-ativação completa; nenhuma regra de proteção foi enfraquecida nesta tarefa.
+Esta sessão confirmou `main` como padrão e repositório público. A proteção foi
+aplicada via API e conferida com a conta proprietária. O check obrigatório é
+`test`, vinculado ao App GitHub Actions de ID `15368`; exige branch atualizada e
+uma aprovação, inclusive para administradores. Não há permissão de force-push ou
+exclusão. Somente o proprietário consta atualmente como colaborador: para aprovar
+PRs escritos por essa conta, outro membro precisará de acesso de escrita. Os
+logins dos membros devem ser informados pelo administrador; não foram inventados
+nem enviados convites nesta tarefa.
 
 ## Limites e recuperação
 
