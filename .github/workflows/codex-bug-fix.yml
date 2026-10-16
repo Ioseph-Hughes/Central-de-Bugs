@@ -1,0 +1,178 @@
+name: Correção opcional de bugs com Codex
+on:
+  issues:
+    types: [labeled]
+permissions: {}
+concurrency:
+  group: codex-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  authorize:
+    if: >-
+      github.event.label.name == 'codex-fix' &&
+      !github.event.issue.pull_request &&
+      vars.BUGFIX_BOT_LOGIN != '' &&
+      github.actor == vars.BUGFIX_BOT_LOGIN &&
+      github.event.issue.user.login == vars.BUGFIX_BOT_LOGIN
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      issue: ${{ steps.gate.outputs.issue }}
+      base: ${{ steps.gate.outputs.base }}
+      report: ${{ steps.gate.outputs.report }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - id: gate
+        run: node scripts/bugfix-workflow.cjs gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUGFIX_BOT_LOGIN: ${{ vars.BUGFIX_BOT_LOGIN }}
+
+  codex:
+    needs: authorize
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    outputs:
+      proposal: ${{ steps.codex.outputs.final-message }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.authorize.outputs.base }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/bugfix-workflow.cjs prepare
+        env:
+          ISSUE_REPORT: ${{ needs.authorize.outputs.report }}
+      # Última etapa do job: não executar outro processo confiável neste runner.
+      - id: codex
+        uses: openai/codex-action@a8d8be6ee028bea4525bc722d16f36687b408c81
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          codex-version: '0.162.1'
+          permission-profile: ':workspace'
+          safety-strategy: drop-sudo
+          allow-bot-users: ${{ vars.BUGFIX_BOT_LOGIN }}
+          model: ${{ vars.BUGFIX_MODEL }}
+          prompt-file: ${{ runner.temp }}/bug-fix-prompt.md
+          output-schema-file: .github/codex/proposal.schema.json
+
+  proposal:
+    needs: codex
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions: {}
+    steps:
+      - name: Transportar somente os dados retornados pelo agente
+        shell: bash
+        env:
+          PROPOSAL: ${{ needs.codex.outputs.proposal }}
+        run: |
+          node -e 'const fs=require("node:fs"); const p=process.env.PROPOSAL; if(!p || Buffer.byteLength(p)>240000) throw Error("Proposta ausente ou excessiva"); JSON.parse(p); fs.mkdirSync("proposal"); fs.writeFileSync("proposal/proposal.json",p);'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: codex-proposal
+          path: proposal/proposal.json
+          retention-days: 3
+          if-no-files-found: error
+
+  verify:
+    needs: [authorize, proposal]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.authorize.outputs.base }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: codex-proposal
+          path: proposal
+      - name: Validar caminhos, modos e aplicação do patch
+        run: node scripts/bugfix-workflow.cjs apply proposal/proposal.json
+      - name: Preparar ambiente sem credenciais para os testes
+        run: docker build -f .github/codex/verify.Dockerfile -t central-bugfix-verify .
+      - name: Executar testes, SQL, build e regressões novas sem rede nem acesso ao host
+        run: >-
+          docker run --rm --network=none --cap-drop=ALL --security-opt=no-new-privileges
+          --pids-limit=512 --memory=6g --cpus=2 --shm-size=1g
+          central-bugfix-verify
+      - run: node scripts/bugfix-workflow.cjs evidence
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: codex-validated
+          path: validated/
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    needs: [authorize, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.authorize.outputs.base }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: codex-validated
+          path: validated
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - id: token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ vars.BUGFIX_PUBLISH_APP_ID }}
+          private-key: ${{ secrets.BUGFIX_PUBLISH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - name: Criar branch e PR em rascunho sem executar a proposta
+        run: node scripts/bugfix-workflow.cjs publish
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          ISSUE_NUMBER: ${{ needs.authorize.outputs.issue }}
+
+  failure:
+    needs: [authorize, codex, proposal, verify, publish]
+    if: >-
+      always() && needs.authorize.result == 'success' &&
+      (needs.codex.result != 'success' || needs.proposal.result != 'success' ||
+       needs.verify.result != 'success' || needs.publish.result != 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.authorize.outputs.base }}
+          persist-credentials: false
+      - run: node scripts/bugfix-workflow.cjs failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ needs.authorize.outputs.issue }}

@@ -3,6 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 const { validAttachment, attachmentTypes, generatedFileName } = require('../server.cjs');
 const registry = require('../registry.cjs');
+const bugFixes = require('../bug-fixes.cjs');
 const bucket = 'central-attachments';
 const generatedPath = key => `${key}/generated.pdf`;
 const states = ['novo','em-analise','em-correcao','resolvido'];
@@ -20,6 +21,7 @@ function validate(report) {
     throw fail(400,'Relato ou metadados dos anexos inválidos.');
   }
   if (report.attachments.some(file => file.size > 50 * 1024 * 1024)) throw fail(413,'Cada arquivo pode ter até 50 MB neste armazenamento.');
+  bugFixes.validateRequest(report);
 }
 async function body(req) {
   // Também limitar antes do parse em execução Node; na Vercel req.body já é parseado.
@@ -41,7 +43,8 @@ function checked(result) {
   }
   return result.data;
 }
-function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
+function createHandler({ client, secret, centralOrigin, supabaseURL, bugFixOptions } = {}) {
+  const fixes = bugFixes.createIntegration({client,...bugFixOptions});
   const receipt = row => createHmac('sha256',secret).update(`${row.key}:${row.digest}`).digest('hex');
   async function authorize(req) {
     return registry.authorizeAdmin(client,req);
@@ -69,7 +72,8 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         file.url = urls[index].signedUrl;
       }
     }
-    return { key:row.key,report:row.report,attachments,status:row.status,receivedAt:row.received_at,updatedAt:row.updated_at };
+    return { key:row.key,report:row.report,attachments,status:row.status,receivedAt:row.received_at,updatedAt:row.updated_at,
+      ...(row.report.autoFix ? {autoFix:await fixes.status(row)} : {}) };
   }
   async function filePrefix(path) {
     const response = await fetch(`${supabaseURL}/storage/v1/object/authenticated/${bucket}/${path}`, {
@@ -252,6 +256,7 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         const report = input.report, project = projects.find(item => item.id === report.projectId);
         if (!project || !(project.origins.includes(origin) || project.id === 'central-demo' && origin === centralOrigin)) throw fail(403,'Sistema ou domínio não autorizado para este envio.');
         const identity=registry.checkTicket(req,project,secret);
+        if (report.autoFix && !identity) permission(project,await authorize(req));
         if (identity) report.user={email:identity.email};
         if (new URL(report.context.url).origin !== origin) throw fail(400,'Página de origem inválida.');
         const reportKey = hash(JSON.stringify([report.projectId,report.id]));
@@ -259,7 +264,7 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         const sender = createHmac('sha256',secret).update(`${report.projectId}:${req.headers['x-vercel-forwarded-for'] || req.socket?.remoteAddress || 'unknown'}`).digest('hex');
         const rows = checked(await client.rpc('central_reserve',{p_key:reportKey,p_project:project.id,p_report:report,p_attachments:attachments,p_digest:hash(JSON.stringify(report)),p_sender:sender}));
         const row = rows[0]; if (!row) throw fail(503,'Não foi possível reservar o envio.');
-        if (row.ready) { json(res,200,{key:row.key,ready:true}); return; }
+        if (row.ready) { json(res,200,{key:row.key,ready:true,...(row.report.autoFix ? {autoFix:await fixes.start(row)} : {})}); return; }
         const uploads = [];
         for (const file of row.attachments) {
           // Retentativas reutilizam arquivos já recebidos, sem sobrescrever bytes.
@@ -278,6 +283,7 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
         const project = projects.find(item => item.id === row.project_id);
         if (!project || !(project.origins.includes(origin) || project.id === 'central-demo' && origin === centralOrigin)) throw fail(403,'Origem não autorizada para esta ocorrência.');
         const identity=registry.checkTicket(req,project,secret);
+        if (row.report.autoFix && !identity) permission(project,await authorize(req));
         if (identity && row.report.user?.email!==identity.email) throw fail(403,'Este relato pertence a outra conta.');
         if (!row.ready) {
           for (const file of row.attachments) {
@@ -295,7 +301,7 @@ function createHandler({ client, secret, centralOrigin, supabaseURL } = {}) {
           }
           checked(await client.from('central_reports').update({ready:true}).eq('key',row.key));
         }
-        json(res,201,{key:row.key,id:row.report.id}); return;
+        json(res,201,{key:row.key,id:row.report.id,...(row.report.autoFix ? {autoFix:await fixes.start({...row,ready:true})} : {})}); return;
       }
       throw fail(400,'Ação de envio inválida. Use o widget atualizado com transporte signed-upload.');
     } catch (error) {

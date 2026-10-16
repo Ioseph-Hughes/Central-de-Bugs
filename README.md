@@ -4,6 +4,8 @@
 
 Widget de feedback reutilizável, sem instalação de pacotes ou etapa de build no SaaS. A interface fica em um Shadow DOM para isolar seus estilos. A captura mobile usa um renderizador local carregado somente quando solicitado.
 
+No cadastro de bugs, **Resolver imediatamente** ativa opcionalmente uma tentativa de correção pelo Codex. Todas as contas com acesso ao cadastro podem usar a opção, sem vincular GitHub. O envio continua sendo confirmado na Central; com a integração configurada, uma Issue sanitizada inicia a investigação, testes isolados e um PR em rascunho para revisão humana. Instalação dos Apps, variáveis, migração e primeiro teste: [Correções automáticas de bugs](docs/automated-bug-fixes.md). Sem configuração, o relato é salvo e a interface informa que a correção não iniciou.
+
 O formulário aceita imagens e **PDFs** juntos em **Adicionar arquivos**. PDFs têm um link para abrir antes do envio e nos detalhes da ocorrência. Na Central online, cada anexo pode ter até **50 MB**; os arquivos permanecem privados. Instalações existentes precisam aplicar [a migração de PDFs](supabase/migrations/20261014025612_pdf_attachments.sql) antes de publicar a versão 0.12. A migração acrescenta o tipo PDF ao bucket sem mudar sua visibilidade, limite ou arquivos existentes.
 
 Para entender o propósito, o fluxo de uso e como compartilhar a integração, leia [GUIA-DO-PLUGIN.md](GUIA-DO-PLUGIN.md).

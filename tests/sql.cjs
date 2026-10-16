@@ -12,6 +12,8 @@ const { PGlite } = require(process.env.PGLITE_PATH || '@electric-sql/pglite');
     await db.exec('create schema auth; create table auth.users(id uuid primary key,email text); create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]); create role anon; create role authenticated; create role service_role bypassrls;');
     const sql = await fs.readFile(path.join(__dirname,'../supabase/setup.sql'),'utf8');
     await db.exec(sql); await db.exec(sql);
+    const fixMigration=await fs.readFile(path.join(__dirname,'../supabase/migrations/20261015204835_automated_bug_fixes.sql'),'utf8');
+    await db.exec(fixMigration); await db.exec(fixMigration);
     const bucket = (await db.query("select * from storage.buckets where id='central-attachments'")).rows[0];
     assert.ok(bucket.allowed_mime_types.includes('application/pdf'));
     await db.query("update storage.buckets set allowed_mime_types=array['image/png','image/bmp'] where id='central-attachments'");
