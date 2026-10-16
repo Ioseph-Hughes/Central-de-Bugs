@@ -69,27 +69,49 @@ nenhum acesso de `anon` ou `authenticated`. O aviso informativo de RLS sem
 políticas é esperado para essa tabela exclusiva do servidor.
 
 A conexão Vercel foi confirmada no projeto `central-de-bugs`, da equipe
-`ioseph-hughes`. As quatro variáveis existentes de Supabase/origem estão
-cadastradas em produção; seus valores secretos não foram lidos. As variáveis
-`BUGFIX_APP_ID`, `BUGFIX_APP_PRIVATE_KEY` e `BUGFIX_REPOSITORIES` ainda não existem.
+`ioseph-hughes`. As quatro variáveis existentes de Supabase/origem foram
+preservadas. Após autorização explícita, foram criados dois Apps privados da
+conta `Ioseph-Hughes`, instalados **somente em `Central-de-Bugs`**:
+
+| App | App ID | Installation ID | Permissões |
+| --- | --- | --- | --- |
+| `cb-bugs-receiver-ioseph-hughes` | `5339349` | `171926811` | Issues write, Metadata read |
+| `cb-bugs-publisher-ioseph-hughes` | `5339352` | `171926852` | Contents/Issues/Pull requests write, Metadata read |
+
+Webhooks, OAuth de usuários e device flow estão desativados. A autenticação RSA
+foi validada nos dois Apps, criando tokens temporários limitados ao repositório,
+consultando os repositórios acessíveis e revogando esses tokens em seguida.
+A primeira chave de recebimento, cujo download não ficou disponível, foi revogada
+após confirmação; somente a substituta salva na Vercel permanece ativa.
+
+Na Vercel, foram cadastradas em produção `BUGFIX_APP_ID`,
+`BUGFIX_APP_PRIVATE_KEY` (sensitive) e `BUGFIX_REPOSITORIES`. O mapeamento piloto
+é exclusivamente `central-demo` (**Central · Testes**) para
+`Ioseph-Hughes/Central-de-Bugs`, instalação `171926811`. Kimb, Radar Contratual,
+SOl 2 e Viva Seu Mapa não foram direcionados ao código da Central: precisam dos
+próprios repositórios, instalações e workflows revisados antes do mapeamento.
+
+No GitHub, foram cadastrados o Secret `BUGFIX_PUBLISH_APP_PRIVATE_KEY` e as
+Variables `BUGFIX_PUBLISH_APP_ID=5339352` e
+`BUGFIX_BOT_LOGIN=cb-bugs-receiver-ioseph-hughes[bot]`. Nenhum PEM foi versionado.
+A chave `OPENAI_API_KEY` permanece ausente. A integração OpenAI Developers foi
+sugerida para permitir sua configuração pela conexão oficial, mas ainda não está
+confirmada nesta sessão.
 
 O acesso GitHub foi corrigido selecionando a conta já autenticada
 `Ioseph-Hughes` no GitHub CLI; a conta anteriormente ativa era `MVPcontratos`.
 A API confirmou escrita e administração do repositório para a conta selecionada.
 Não foi necessário reinstalar o plugin nem ampliar permissões de tokens.
 
-A integração completa ainda não está ativa: Apps, seus segredos e a chave OpenAI
-continuam pendentes. O repositório não possui Actions Secrets ou Variables
-cadastrados. A proteção da principal foi aplicada e verificada: PR com uma
-aprovação humana, check `test` do GitHub Actions, branch atualizada, regras
-também para administradores, sem force-push ou exclusão e com resolução das
-conversas obrigatória. Nenhum merge ou deployment foi feito nesta etapa.
-
-O cadastro dos Apps foi aberto na conta `Ioseph-Hughes`, mas o GitHub exigiu
-confirmação da identidade por e-mail (sudo mode). Essa confirmação está pendente
-na aba do navegador. O App de recebimento e o App de publicação ainda não foram
-criados. A integração OpenAI Developers foi sugerida para permitir a configuração
-da chave API pela conexão oficial, mas ainda não está confirmada nesta sessão.
+A proteção da principal foi aplicada e verificada: PR com uma aprovação humana,
+check `test` do GitHub Actions, branch atualizada, regras também para
+administradores, sem force-push ou exclusão e com resolução das conversas
+obrigatória. A implementação está no PR draft
+[#10](https://github.com/Ioseph-Hughes/Central-de-Bugs/pull/10).
+**A integração completa ainda não está ativa**: faltam a chave OpenAI, a revisão
+e incorporação do PR pela equipe e a publicação normal da Central. Não houve
+merge, deployment ou teste pago de ponta a ponta nesta etapa. Alterações de
+variáveis da Vercel valerão para um deployment posterior.
 
 ### 1. Banco
 
@@ -101,7 +123,7 @@ necessárias à sua versão. Ela é idempotente. Não modifica os relatos existe
 A tabela `central_bug_fix_jobs` tem RLS, nenhum acesso para `anon`/`authenticated`
 e uma RPC reservada a `service_role`. Sem acesso direto do navegador. A chave
 secreta existente continua exclusivamente no servidor. A migração foi verificada
-em PostgreSQL embarcado; aplicar no projeto remoto permanece uma etapa manual.
+em PostgreSQL embarcado e aplicada no projeto remoto conforme registrado acima.
 
 ### 2. App de recebimento na Vercel
 
@@ -161,7 +183,8 @@ tecnologia dele. O workflow atual foi feito para esta Central Node.js 22/npm;
 não detecta nem inventa os testes de outros projetos. Só adicione o mapeamento
 depois dessa instalação. Um rótulo não executa um workflow ausente na branch
 padrão. Mudanças desta implementação precisam ser revisadas e incorporadas pela
-equipe antes da ativação; não houve push ou merge nesta tarefa.
+equipe antes da ativação. Houve push apenas na branch de trabalho e abertura do
+PR draft #10; nenhum merge ou deployment.
 
 ### 4. Proteger a main
 
