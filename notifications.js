@@ -118,7 +118,15 @@
   async function tick() {
     if(!running || syncing || document.hidden || !document.hasFocus())return;
     const version=generation;syncing=true;
-    try{const result=await current();if(version!==generation)return;device=result.device;running=!!device;if(result.summary?.total){showSummary(result.summary);await ack(result.summary);}controls();}catch{}
+    try{
+      const result=await current();if(version!==generation)return;device=result.device;running=!!device;
+      if(result.summary?.total){
+        showSummary(result.summary);
+        // Preservar os relatos até o envio push, mesmo com o painel em foco.
+        if(!result.summary.pending)await ack(result.summary);
+      }
+      controls();
+    }catch{}
     finally{syncing=false;}
   }
   function reset() {generation++;running=false;device=null;settings=null;dialog.close();$('#notifications-summary').hidden=true;void identify('').catch(()=>{});controls();}

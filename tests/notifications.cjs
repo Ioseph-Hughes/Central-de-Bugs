@@ -131,7 +131,7 @@ class Query {
     browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
     const context=await browser.newContext({...devices['Pixel 7']});await context.grantPermissions(['notifications'],{origin});
     context.setDefaultTimeout(10000);
-    await context.addInitScript(subscription=>{
+    const mockNotifications=subscription=>{
       window.nativeNotices=[];window.fakeSub=null;
       window.fakePermission='granted';
       Object.defineProperty(Notification,'permission',{configurable:true,get:()=>window.fakePermission});
@@ -139,7 +139,8 @@ class Query {
       PushManager.prototype.getSubscription=async()=>window.fakeSub;
       PushManager.prototype.subscribe=async()=>window.fakeSub={endpoint:subscription.endpoint,toJSON:()=>subscription,unsubscribe:async()=>{window.fakeSub=null;return true;}};
       ServiceWorkerRegistration.prototype.showNotification=async(title,options)=>{window.nativeNotices.push({title,options});};
-    },sub);
+    };
+    await context.addInitScript(mockNotifications,sub);
     const page=await context.newPage(),errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(origin);
     await page.evaluate(()=>fakePermission='denied');
     await page.getByRole('button',{name:'Notificações',exact:false}).click();
@@ -166,6 +167,28 @@ class Query {
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await fs.mkdir(path.join(__dirname,'../artifacts/notifications'),{recursive:true});
     await page.screenshot({path:path.join(__dirname,'../artifacts/notifications/preferencias-mobile.png')});
+    // O painel em foco não pode consumir os relatos antes do envio push agendado.
+    const desktopContext=await browser.newContext({viewport:{width:1440,height:900}});
+    await desktopContext.grantPermissions(['notifications'],{origin});
+    await desktopContext.addInitScript(mockNotifications,sub);
+    const desktop=await desktopContext.newPage();await desktop.goto(origin);
+    await desktop.evaluate(async subscription=>{fakeSub={endpoint:subscription.endpoint};await startNotifications();},sub);
+    await desktop.bringToFront();
+    assert.equal(await desktop.evaluate(()=>!document.hidden && document.hasFocus()),true);
+    await report(42);await report(43,'radar-contratual');await report(44,'radar-contratual');
+    await desktop.evaluate(()=>CentralNotifications.tick());
+    assert.match(await desktop.locator('#notifications-summary-text').innerText(),/2 novos relatos/);
+    assert.equal((await call('GET',null,'admin','?device='+id)).value.summary.total,2,'Painel em foco preserva os relatos para o push.');
+    sendError=Object.assign(new Error('transient'),{statusCode:503});
+    assert.equal((await dispatch()).value.failed,1);
+    await desktop.evaluate(()=>CentralNotifications.tick());
+    assert.equal((await call('GET',null,'admin','?device='+id)).value.summary.total,2,'Falha no envio não consome os relatos.');
+    await db.query("update public.central_push_devices set lease_until=now()-interval '1 second'");
+    assert.equal((await dispatch()).value.sent,1);assert.equal(sent.at(-1).value.total,2);
+    await desktop.evaluate(()=>CentralNotifications.tick());
+    assert.equal((await call('GET',null,'admin','?device='+id)).value.summary.total,0,'Após o envio, o painel registra a consulta.');
+    assert.equal((await dispatch()).value.sent,0,'O mesmo grupo não gera um segundo push.');
+    await desktopContext.close();
     await page.getByRole('button',{name:'Desativar neste dispositivo'}).click();await page.getByText('Notificações desativadas neste dispositivo.',{exact:true}).waitFor();
     assert.equal((await db.query('select count(*)::int as n from public.central_push_devices')).rows[0].n,0);
     assert.equal(await page.getByRole('button',{name:'Ativar neste dispositivo'}).isEnabled(),true);
@@ -208,7 +231,7 @@ class Query {
     await fire('notificationclick',{notification:{close(){},data:{url:'https://evil.example/'}}});assert.equal(opened[0],origin+'/');
     await fire('message',{data:{type:'identity',userId:''},ports:[{postMessage(){}}]});
     await fire('push',{data:{json:()=>sent[0].value}});assert.equal(notices.length,1,'Sair da conta impede exibir dados de novos pushes.');
-    console.log('OK: fila após confirmação, agrupamento/filtros, inscrições privadas, VAPID/criptografia, autenticação, deduplicação, lease/retry/410, UI mobile, desativação, identidade do SW e navegação segura.');
+    console.log('OK: fila após confirmação, agrupamento/filtros, inscrições privadas, VAPID/criptografia, autenticação, deduplicação, lease/retry/410, UI mobile, push com painel desktop em foco, desativação, identidade do SW e navegação segura.');
   }catch(error){const page=browser?.contexts()[0]?.pages()[0];if(page)console.error(await page.evaluate(()=>({message:document.querySelector('#notifications-message')?.textContent,permission:Notification.permission,supported:{serviceWorker:'serviceWorker' in navigator,push:'PushManager' in window}})));throw error;}
   finally{await browser?.close();if(server)await new Promise(resolve=>server.close(resolve));await db.close();await fs.rm(output,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});
